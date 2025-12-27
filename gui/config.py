@@ -15,12 +15,12 @@ NUM_JOINTS = 6
 # Per-joint configuration: label, min_angle, max_angle, start_angle
 # Edit these values to change slider ranges and labels.
 JOINTS = [
-    {"label": "Joint 1", "min": -90.0, "max": 90.0, "start": 0.0},
-    {"label": "Joint 2", "min": -90.0, "max": 90.0, "start": 0.0},
-    {"label": "Joint 3", "min": -90.0, "max": 90.0, "start": 0.0},
-    {"label": "Joint 4", "min": -180.0, "max": 180.0, "start": 0.0},
-    {"label": "Joint 5", "min": -180.0, "max": 180.0, "start": 0.0},
-    {"label": "Joint 6", "min": -180.0, "max": 180.0, "start": 0.0},
+    {"label": "Joint 1", "min": 0.0, "max": 90.0, "start": 0.0, "enabled": 0},
+    {"label": "Joint 2 shoulder", "min": 0.0, "max": 90.0, "start": 0.0, "enabled": 0},
+    {"label": "Joint 3", "min": 0.0, "max": 90.0, "start": 0.0, "enabled": 0},
+    {"label": "Joint 4", "min": 0.0, "max": 180.0, "start": 0.0, "enabled": 0},
+    {"label": "Joint 5", "min": 0.0, "max": 180.0, "start": 0.0, "enabled": 0},
+    {"label": "Joint 6", "min": 0.0, "max": 180.0, "start": 0.0, "enabled": 0},
 ]
 
 # Packet format settings
