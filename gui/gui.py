@@ -191,17 +191,20 @@ class ArmGUI(tk.Tk):
 
         # Right side: send button and packet preview
         send_frame = ttk.Frame(bottom)
-        send_frame.pack(side="right", anchor="e")
+        send_frame.pack(side="right", anchor="e", fill="x")
 
-        # Send Command - larger green button
+        # Use grid inside send_frame so the Send button occupies a fixed column
+        send_frame.grid_columnconfigure(1, weight=1)
+
+        # Send Command - larger green button (fixed column 0)
         self.send_btn = tk.Button(send_frame, text="Send Command", command=self._on_send,
-                      bg="#2e7d32", fg="white", font=("TkDefaultFont", 11, "bold"),
-                      width=14, height=2)
-        self.send_btn.pack(side="left", padx=(4, 10))
+                  bg="#2e7d32", fg="white", font=("TkDefaultFont", 11, "bold"),
+                  width=14, height=2)
+        self.send_btn.grid(row=0, column=0, padx=(4, 10), pady=2)
 
-        # Packet preview area
+        # Packet preview area (column 1 expands; does not push the button)
         packet_frame = ttk.Frame(send_frame)
-        packet_frame.pack(side="left", padx=4)
+        packet_frame.grid(row=0, column=1, sticky="e", padx=4)
 
         self.current_packet_label = ttk.Label(packet_frame, text="", font=("Courier", 9))
         self.current_packet_label.pack(side="top", anchor="e")

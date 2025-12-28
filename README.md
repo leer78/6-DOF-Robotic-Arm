@@ -22,6 +22,7 @@ This README is the single-source-of-truth for the project scope, control algorit
 **Software Stack & Libraries (recommended)**
 - On Teensy (C++ / Arduino-style):
   - `Wire` (I2C) — for AS5600 + TCA9548A
+  - `AS5600` — AS5600 library by Robert Tillaart (install via Arduino Library Manager; used for reading AS5600 encoders)
   - `AccelStepper` — for STEP/DIR driver control (use `DRIVER` mode for TB6600)
   - `EEPROM` or a small nonvolatile store — to save per-joint calibration offsets
   - `PID_v1` (Brett Beauregard) or similar — per-joint PID controller if using PID
