@@ -140,7 +140,8 @@ class ArmGUI(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("6-DOF Arm Controller")
-        self.geometry("1280x1020")
+        # Maximize the window (windowed fullscreen with borders and controls)
+        self.state('zoomed')
 
         self.joint_boxes = []
         self.estop = tk.IntVar(value=0)
