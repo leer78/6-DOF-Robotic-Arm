@@ -2,6 +2,9 @@
 
 This README is the single-source-of-truth for the project scope, control algorithm choices, wiring and software stack, and the operational flow for the Teensy 4.1-based 6-DOF robotic arm (currently 4 joints assembled).
 
+**Serial Communication: Listener-Driven ACK Flow**
+The GUI uses a background listener thread to receive ACKs from the Teensy. When a command is sent via `send_packet()`, the GUI blocks on `wait_for_ack()` until a matching ACK is received or timeout occurs. See [SERIAL_PROTOCOL_LISTENER.md](SERIAL_PROTOCOL_LISTENER.md) for details.
+
 **Project Summary**
 - **Goal:** Provide a robust closed-loop control system for a 6-DOF arm (4 joints currently connected) using NEMA17 steppers + TB6600 drivers and AS5600 magnetic encoders read through a TCA9548A I2C multiplexer. A PC-based UI will send commands to the Teensy 4.1 via serial (one-way UI->Teensy). The Teensy performs closed-loop joint control and safety.
 - **Assumptions:** Joints rotate ≤360° (single rotation), AS5600 provides 12-bit angle data, TB6600 receives STEP/PUL (PUL) + DIR, multiplexer channel switching is used to address each encoder.

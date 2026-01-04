@@ -17,6 +17,7 @@
 #define WRIST1_SERVO_pin 5
 #define WRIST2_SERVO_pin 6
 #define GRIPPER_SERVO_pin 7
+#define PUSH_SWITCH_pin 37
 
 // I2C / Multiplexer
 #define TCA9548A_ADDR 0x70
@@ -48,5 +49,35 @@
 #define JOINT4_MUX_CH sc3
 #define JOINT5_MUX_CH sc4
 #define JOINT6_MUX_CH sc5
+
+// ============================================================================
+// SERIAL PROTOCOL CONFIGURATION (mirrors gui/config.py)
+// ============================================================================
+
+// Mode definitions
+#define MODE_IDLE 0
+#define MODE_CALIBRATION 1
+#define MODE_MOVE 2
+#define MODE_RESERVED 3
+
+// Command definitions
+#define CMD_SET_MODE "SET_MODE"
+#define CMD_JOINTS_TO_ANGLE "JOINTS_TO_ANGLE"
+#define CMD_JOINT_EN "JOINT_EN"
+#define CMD_ESTOP "ESTOP"
+#define CMD_CALIBRATE_JOINT "CALIBRATE_JOINT"
+
+// Joint configuration
+#define NUM_JOINTS 6
+#define JOINT_MIN_ANGLE 0.0
+#define JOINT_MAX_ANGLE 180.0
+
+
+// Telemetry configuration
+#define TELEM_INTERVAL_MS 20
+#define PACKET_MAX_LEN 256
+
+// Button debounce (ms)
+#define BUTTON_DEBOUNCE_MS 200
 
 #endif // CONTROLS_CONFIG_H
