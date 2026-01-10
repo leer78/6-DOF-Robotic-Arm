@@ -332,27 +332,34 @@ def _listener_thread_packet() -> None:
     global current_ack
     
     buffer = b""
+    loop_count = 0
     
     while not _listener_stop_flag.is_set():
+        loop_count += 1
+        
+        # Log every 1000 iterations to show thread is alive
+        if loop_count % 1000 == 0:
+            logger.debug(f"[LISTENER] Thread alive, loop #{loop_count}, buffer size: {len(buffer)}")
+        
         try:
             if _listener_serial_conn is None:
-                time.sleep(0.1)
                 continue
             
             # Check if data is available
             in_waiting = getattr(_listener_serial_conn, 'in_waiting', 0)
             if in_waiting > 0: #data is available
+                logger.debug(f"[LISTENER] {in_waiting} bytes available, reading...")
                 chunk = _listener_serial_conn.read(in_waiting)
                 if chunk:
                     buffer += chunk
-            else:
-                # No data available, sleep briefly to avoid busy-waiting
-                time.sleep(0.01)
-                continue
+                    logger.debug(f"[LISTENER] Read chunk: {chunk!r}")
+                    logger.debug(f"[LISTENER] Buffer now: {buffer!r}")
             
-            # Process complete lines
+            # Process complete lines from buffer (even if no new data arrived)
+            # This ensures we don't leave data sitting in buffer unprocessed
             while b'\n' in buffer:
                 line_bytes, buffer = buffer.split(b'\n', 1)
+                logger.debug(f"[LISTENER] Processing line: {line_bytes!r}")
                 try:
                     line = line_bytes.decode('utf-8').strip()
                 except UnicodeDecodeError:
@@ -367,21 +374,26 @@ def _listener_thread_packet() -> None:
                     ptype = parsed.get("TYPE") #currently, only two types would be seen from teensy: ACK and DATA
                     
                     if ptype == "ACK":
+                        logger.debug(f"[LISTENER] ACK seen, trying to get lock, line: {line}")
                         with current_ack_lock:
+                            old_ack = current_ack
                             current_ack = line
-                        logger.debug(f"ACK received: {line}")
+                        logger.debug(f"[LISTENER] ACK stored. Old: {old_ack}, New: {line}")
                     elif ptype == "DATA":
+                        logger.debug(f"[LISTENER] DATA packet: {line[:60]}...")
                         if _telemetry_handler is not None:
                             try:
                                 _telemetry_handler(line)
                             except Exception as e:
                                 logger.error(f"Telemetry handler error: {e}")
-                        logger.debug(f"DATA received: {line}")
                     else:
-                        logger.debug(f"Other packet received: {line}")
+                        logger.debug(f"[LISTENER] Other packet: {line}")
                         
                 except ProtocolError as e:
-                    logger.warning(f"Malformed packet: {line} - {e}")
+                    logger.warning(f"[LISTENER] Malformed packet: {line} - {e}")
+            
+            # Small sleep to avoid busy-waiting when no data
+            time.sleep(0.001)
                     
         except Exception as e:
             logger.error(f"Listener read error: {e}")
@@ -390,6 +402,16 @@ def _listener_thread_packet() -> None:
 
 def send_packet(serial_conn, packet_str: str) -> None:
     """Write a packet to the serial connection, ensuring newline and flush."""
+    global current_ack
+    
+    # CRITICAL: Clear any stale ACK BEFORE sending packet
+    # This prevents race condition where ACK arrives and gets stored
+    # before wait_for_ack() is called
+    with current_ack_lock:
+        old_ack = current_ack
+        current_ack = None
+    logger.debug(f"[SEND] Clearing ACK (was: {old_ack}), sending: {packet_str.strip()}")
+    
     # Ensure a single trailing newline; convert to bytes and write.
     if not packet_str.endswith('\n'):
         packet_str = packet_str + '\n'
@@ -399,16 +421,22 @@ def send_packet(serial_conn, packet_str: str) -> None:
         # Flush if available to minimize latency
         if hasattr(serial_conn, 'flush'):
             serial_conn.flush()
+        logger.info(f"[SEND] Packet transmitted and flushed")
     except Exception as e:
         # Surface errors as ProtocolError for callers
         raise ProtocolError(f"Failed to send packet: {e}")
 
 
-def wait_for_ack(sent_packet: str, timeout: float = 5.0) -> bool:
+def wait_for_ack(sent_packet: str, timeout: float = 6.0) -> bool:
     """Block until a matching ACK is received or timeout expires."""
     global current_ack
     
+    # Note: current_ack was already cleared in send_packet() before transmission
+    # to prevent race condition with fast ACK responses
+    
+    logger.info(f"[WAIT] Starting wait for ACK (timeout={timeout}s)")
     start = time.time()
+    last_log_time = start
     
     # Poll loop: check `current_ack` under lock, attempt verification
     # on any observed ACK; if verification succeeds consume it and
@@ -417,26 +445,40 @@ def wait_for_ack(sent_packet: str, timeout: float = 5.0) -> bool:
     while time.time() - start < timeout:
         with current_ack_lock:
             ack = current_ack
+        
+        logger.debug(f"[WAIT] Polling - current_ack value: {ack}")
 
         if ack is not None:
+            logger.debug(f"[WAIT] ACK detected: {ack}")
             try:
                 # verify_ack expects newline-terminated strings
                 sent_with_newline = sent_packet if sent_packet.endswith('\n') else sent_packet + '\n'
                 ack_with_newline = ack + '\n'
+                logger.debug(f"[WAIT] Verifying - sent: {sent_with_newline.strip()}, ack: {ack_with_newline.strip()}")
                 verify_ack(sent_with_newline, ack_with_newline)
 
                 # ACK verified - consume it and return
                 with current_ack_lock:
                     current_ack = None
+                logger.debug(f"[WAIT] ACK verified and consumed. current_ack now: None")
                 return True
-            except ProtocolError:
+            except ProtocolError as e:
                 # not a matching ACK; continue waiting
+                logger.warning(f"[WAIT] ACK mismatch (keeping current_ack={ack}): {e}")
                 pass
+        
+        # Log every second to show we're still waiting
+        if time.time() - last_log_time >= 1.0:
+            logger.debug(f"[WAIT] Still waiting... ({time.time() - start:.1f}s elapsed)")
+            last_log_time = time.time()
 
         # Small sleep reduces CPU usage while keeping latency low
-        time.sleep(0.01)
+        time.sleep(0.005)
 
     # Timeout expired without matching ACK
+    with current_ack_lock:
+        final_ack = current_ack
+    logger.error(f"[WAIT] Timeout after {timeout}s. Final current_ack value: {final_ack}")
     raise ProtocolError(f"Timeout waiting for ACK (sent: {sent_packet.strip()})")
 
 

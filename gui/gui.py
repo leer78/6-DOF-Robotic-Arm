@@ -12,6 +12,7 @@ import math
 from datetime import datetime
 from collections import deque
 import logging
+import queue
 
 import config
 import serial_protocol
@@ -114,12 +115,7 @@ class JointBox(ttk.LabelFrame):
         s = self.canvas_size
         cx = cy = s // 2
         r = int(s * 0.4)
-        # convert degrees (0 at +X, CCW positive) to canvas coor
-    
-    def update_current_angle(self, angle: float):
-        """Update the current encoder angle display from telemetry data."""
-        self.current_encoder_angle = angle
-        self.current_angle_label.config(text=f"Current Angle: {angle:.1f}°")
+        # convert degrees (0 at +X, CCW positive) to canvas coords
         rad = math.radians(ang)
         x = cx + r * math.cos(rad)
         y = cy - r * math.sin(rad)
@@ -129,8 +125,13 @@ class JointBox(ttk.LabelFrame):
                 self.canvas.delete(self.line_id)
             except Exception:
                 pass
-        # draw new red line
+        # draw new line for slider angle
         self.line_id = self.canvas.create_line(cx, cy, x, y, fill="red", width=2)
+    
+    def update_current_angle(self, angle: float):
+        """Update the current encoder angle display from telemetry data."""
+        self.current_encoder_angle = angle
+        self.current_angle_label.config(text=f"Current Angle: {angle:.1f}°")
 
     def get_state(self):
         return bool(self.enabled.get()), float(self.angle.get())
@@ -154,6 +155,9 @@ class ArmGUI(tk.Tk):
         self.sent_packets = deque(maxlen=50)  # Keep last 50 sent packets
         self.received_packets = deque(maxlen=50)  # Keep last 50 received packets
 
+        # Thread-safe queue for telemetry data (listener thread -> main thread)
+        self._telemetry_queue = queue.Queue(maxsize=100)
+
         # Serial connection reference
         self.serial_conn = None
 
@@ -161,6 +165,9 @@ class ArmGUI(tk.Tk):
         
         # Initialize serial connection and listener
         self._init_serial()
+        
+        # Start polling telemetry queue from main thread
+        self._poll_telemetry_queue()
 
         # Clean shutdown on window close
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -203,9 +210,28 @@ class ArmGUI(tk.Tk):
             pass  # Packet parsing failed, just log it
 
     def _handle_telemetry(self, line: str):
-        """Handle incoming DATA packets (telemetry) from Teensy."""
-        # Schedule UI update on main thread
-        self.after(0, lambda: self._log_received_packet(line))
+        """Handle incoming DATA packets (telemetry) from Teensy.
+        
+        CRITICAL: This is called from the listener background thread!
+        Do NOT call any tkinter methods here - just queue the data.
+        """
+        # Put data in thread-safe queue (non-blocking)
+        try:
+            self._telemetry_queue.put_nowait(line)
+        except queue.Full:
+            pass  # Drop oldest data if queue is full
+    
+    def _poll_telemetry_queue(self):
+        """Poll the telemetry queue from main thread and process pending data."""
+        # Process up to 10 items per poll to avoid blocking GUI
+        for _ in range(10):
+            try:
+                line = self._telemetry_queue.get_nowait()
+                self._process_telemetry(line)
+            except queue.Empty:
+                break
+        # Schedule next poll (runs on main thread event loop)
+        self.after(20, self._poll_telemetry_queue)
 
     def _create_widgets(self):
         main = ttk.Frame(self)
@@ -445,7 +471,7 @@ class ArmGUI(tk.Tk):
             
             try:
                 serial_protocol.send_packet(self.serial_conn, packet)
-                serial_protocol.wait_for_ack(packet, timeout=5.0)
+                serial_protocol.wait_for_ack(packet, timeout=6.0)
                 
                 # ACK received - update UI state for SET_MODE
                 if selected_cmd == "SET_MODE":
