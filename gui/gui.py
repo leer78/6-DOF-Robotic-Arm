@@ -2,13 +2,16 @@
 """
 6-DOF Robotic Arm GUI Controller
 
-Integrates with serial_protocol.py for two-lane communication.
-UI components for mode selection, joint control, and command building.
+Main application - integrates modular components:
+  - joint_box.py: JointBox widget for individual joint control
+  - angle_mapping.py: Raw <-> Logical angle conversion
+  - calibration.py: 3-step calibration state machine
+  - serial_protocol.py: Two-lane packet communication
+  - config.py: Centralized configuration
 """
 
 import tkinter as tk
 from tkinter import ttk, messagebox
-import math
 from datetime import datetime
 from collections import deque
 import logging
@@ -16,6 +19,9 @@ import queue
 
 import config
 import serial_protocol
+from joint_box import JointBox
+from angle_mapping import raw_to_logical, logical_to_raw
+from calibration import CalibrationState
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -23,118 +29,6 @@ logger = logging.getLogger(__name__)
 
 # Global serial connection
 _serial_conn = None
-
-
-class JointBox(ttk.LabelFrame):
-    def __init__(self, parent, idx, cfg):
-        super().__init__(parent, text=cfg.get("label", f"Joint {idx+1}"))
-        self.idx = idx
-        self.min_angle = cfg.get("min", 0.0)
-        self.max_angle = cfg.get("max", 180.0)
-        start = cfg.get("start", 0.0)
-
-        # Default enabled state comes from config (default 0 = disabled)
-        self.enabled = tk.IntVar(value=cfg.get("enabled", 0))
-        self.angle = tk.DoubleVar(value=start)
-        
-        # Current encoder angle from Teensy (default 0.0 until first reading)
-        self.current_encoder_angle = 0.0
-
-        # Top row: checkbox on left, current angle on right
-        top_row = ttk.Frame(self)
-        top_row.grid(row=0, column=0, sticky="ew", padx=6, pady=(6, 2))
-        top_row.columnconfigure(0, weight=1)
-        
-        self.chk = ttk.Checkbutton(top_row, text="Enable joint", variable=self.enabled)
-        self.chk.pack(side="left")
-        
-        # Current angle label (top right)
-        self.current_angle_label = ttk.Label(top_row, text="Current Angle: 0.0°", 
-                                             font=("TkDefaultFont", 9), 
-                                             foreground="#2196F3")
-        self.current_angle_label.pack(side="right")
-
-        # Angle display canvas (circle + rotating line)
-        self.canvas_size = 140
-        self.canvas = tk.Canvas(self, width=self.canvas_size, height=self.canvas_size)
-        self.canvas.grid(row=1, column=0, padx=6, pady=(2, 6))
-        # draw static parts of the canvas (circle + quadrant labels)
-        self._draw_canvas()
-
-        # Slider
-        self.scale = ttk.Scale(self, from_=self.min_angle, to=self.max_angle,
-                       orient=tk.HORIZONTAL, variable=self.angle,
-                       command=self._on_scale)
-        self.scale.grid(row=2, column=0, sticky="ew", padx=6)
-
-        # Min / Max labels at the ends of the slider
-        label_row = ttk.Frame(self)
-        label_row.grid(row=3, column=0, sticky="ew", padx=6)
-        min_label = ttk.Label(label_row, text=f"{self.min_angle:.1f}°")
-        min_label.pack(side="left")
-        max_label = ttk.Label(label_row, text=f"{self.max_angle:.1f}°")
-        max_label.pack(side="right")
-
-        # Current value label
-        self.val_label = ttk.Label(self, text=f"{start:.1f}°")
-        self.val_label.grid(row=4, column=0, sticky="e", padx=6, pady=(2, 6))
-
-        self.columnconfigure(0, weight=1)
-        # draw initial angle line
-        self._update_canvas_line()
-
-    def _on_scale(self, _event=None):
-        v = self.angle.get()
-        self.val_label.config(text=f"{v:.1f}°")
-        # Update the canvas line to reflect angle (map to 0-360)
-        try:
-            self._update_canvas_line()
-        except Exception:
-            pass
-
-    def _draw_canvas(self):
-        # draw base circle and quadrant labels
-        self.canvas.delete("all")
-        s = self.canvas_size
-        cx = cy = s // 2
-        r = int(s * 0.4)
-        # circle
-        self.canvas.create_oval(cx - r, cy - r, cx + r, cy + r, outline="black")
-        # quadrant ticks and labels: place slightly inside the circle and center them
-        label_font = ("TkDefaultFont", 8)
-        self.canvas.create_text(cx + r - 12, cy, text="0", anchor="center", font=label_font)
-        self.canvas.create_text(cx, cy - r + 12, text="90", anchor="center", font=label_font)
-        self.canvas.create_text(cx - r + 12, cy, text="180", anchor="center", font=label_font)
-        self.canvas.create_text(cx, cy + r - 12, text="270", anchor="center", font=label_font)
-        # initial line id placeholder
-        self.line_id = None
-
-    def _update_canvas_line(self):
-        # angle from slider, map into [0,360)
-        ang = float(self.angle.get()) % 360.0
-        s = self.canvas_size
-        cx = cy = s // 2
-        r = int(s * 0.4)
-        # convert degrees (0 at +X, CCW positive) to canvas coords
-        rad = math.radians(ang)
-        x = cx + r * math.cos(rad)
-        y = cy - r * math.sin(rad)
-        # remove previous line
-        if getattr(self, "line_id", None) is not None:
-            try:
-                self.canvas.delete(self.line_id)
-            except Exception:
-                pass
-        # draw new line for slider angle
-        self.line_id = self.canvas.create_line(cx, cy, x, y, fill="red", width=2)
-    
-    def update_current_angle(self, angle: float):
-        """Update the current encoder angle display from telemetry data."""
-        self.current_encoder_angle = angle
-        self.current_angle_label.config(text=f"Current Angle: {angle:.1f}°")
-
-    def get_state(self):
-        return bool(self.enabled.get()), float(self.angle.get())
 
 
 class ArmGUI(tk.Tk):
@@ -160,6 +54,9 @@ class ArmGUI(tk.Tk):
 
         # Serial connection reference
         self.serial_conn = None
+        
+        # Calibration state machine
+        self._calib = CalibrationState()
 
         self._create_widgets()
         
@@ -186,18 +83,16 @@ class ArmGUI(tk.Tk):
             messagebox.showwarning("Serial Connection", 
                 f"Could not connect to serial port:\n{e}\n\nGUI will run in offline mode.")
             self.serial_conn = None
-            #_serial_conn = Noneprocess_telemetry(line)
+            #_serial_conn = None
     
     def _process_telemetry(self, line: str):
         """Process telemetry packet and update joint boxes with encoder values."""
-        # Log the packet
         self._log_received_packet(line)
         
-        # Parse the packet to extract encoder angles
         try:
             parsed = serial_protocol.parse_packet(line)
             if parsed.get("TYPE") == "DATA" and parsed.get("CMD") == "JOINT_ANGLES":
-                # Update each joint box with its corresponding encoder value
+                # Update each joint box with its encoder value
                 for i in range(min(len(self.joint_boxes), 6)):
                     encoder_key = f"ENCODER_{i+1}_ANGLE"
                     if encoder_key in parsed:
@@ -205,9 +100,17 @@ class ArmGUI(tk.Tk):
                             angle = float(parsed[encoder_key])
                             self.joint_boxes[i].update_current_angle(angle)
                         except (ValueError, TypeError):
-                            pass  # Skip invalid values
+                            pass
+                
+                # Calibration: button edge detection (1→0 captures)
+                if self._calib.is_active:
+                    btn = int(parsed.get("BUTTON", 0))
+                    if self._calib.process_button(btn):
+                        raw = float(parsed.get(f"ENCODER_{self._calib.joint + 1}_ANGLE", 0.0))
+                        self._calib.capture(raw, self.joint_boxes)
+                        
         except serial_protocol.ProtocolError:
-            pass  # Packet parsing failed, just log it
+            pass
 
     def _handle_telemetry(self, line: str):
         """Handle incoming DATA packets (telemetry) from Teensy.
@@ -436,12 +339,17 @@ class ArmGUI(tk.Tk):
                 packet = serial_protocol.build_packet(TYPE="CMD", CMD="SET_MODE", current_mode=self.mode, MODE=new_mode)
                 
             elif selected_cmd == "JOINTS_TO_ANGLE":
-                # Build JOINTS_TO_ANGLE command
+                # Build JOINTS_TO_ANGLE command - convert logical slider values to raw
                 kwargs = {"current_mode": self.mode}
-                for i, box in enumerate(self.joint_boxes, 1):
-                    _, angle = box.get_state()
-                    kwargs[f"JOINT_{i}_ANG"] = round(angle, 1)
+                logical_angles = []
+                for i, box in enumerate(self.joint_boxes):
+                    _, logical_angle = box.get_state()
+                    raw_angle = logical_to_raw(logical_angle, i)
+                    kwargs[f"JOINT_{i+1}_ANG"] = round(raw_angle, 1)
+                    logical_angles.append(f"J{i+1}={logical_angle:.1f}°")
                 packet = serial_protocol.build_packet(TYPE="CMD", CMD="JOINTS_TO_ANGLE", **kwargs)
+                # Log shows both raw (in packet) and logical (for readability)
+                logger.info(f"Sending JOINTS_TO_ANGLE (logical): {', '.join(logical_angles)}")
                 
             elif selected_cmd == "JOINT_EN":
                 # Build JOINT_EN command
@@ -456,8 +364,9 @@ class ArmGUI(tk.Tk):
                 packet = serial_protocol.build_packet(TYPE="CMD", CMD="ESTOP", current_mode=self.mode, STOP="ALL")
                 
             elif selected_cmd == "CALIBRATE_JOINT":
-                messagebox.showwarning("Not Implemented", "CALIBRATE_JOINT command not yet implemented in GUI")
-                return
+                # Start calibration from joint 1
+                self._calib.start()
+                return  # No packet to send, just start listening
             else:
                 messagebox.showerror("Error", f"Unknown command: {selected_cmd}")
                 return

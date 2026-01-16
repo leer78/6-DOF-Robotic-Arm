@@ -17,15 +17,42 @@ DEFAULT_MODE = 0
 # Number of joints shown in the GUI (6 expected)
 NUM_JOINTS = 6
 
-# Per-joint configuration: label, min_angle, max_angle, start_angle
-# Edit these values to change slider ranges and labels.
+# Per-joint configuration with Raw-to-Logical mapping
+# 
+# CALIBRATION VALUES (captured during calibration or set manually):
+#   ref_raw:    Raw encoder value at neutral/reference position
+#   ref_offset: Logical angle that ref_raw represents (your design choice, e.g., 90°)
+#   direction:  +1 = same direction, -1 = inverted (if CW increases raw but should decrease logical)
+#   min_raw:    Raw encoder value at minimum logical position
+#   max_raw:    Raw encoder value at maximum logical position
+#
+# DERIVED VALUES (computed dynamically, not stored):
+#   min_deg = (min_raw - ref_raw) * direction + ref_offset
+#   max_deg = (max_raw - ref_raw) * direction + ref_offset
+#
+# Mapping formulas:
+#   logical = (raw - ref_raw) * direction + ref_offset
+#   raw = (logical - ref_offset) / direction + ref_raw
+#
 JOINTS = [
-    {"label": "Joint 1", "min": 0.0, "max": 90.0, "start": 0.0, "enabled": 0},
-    {"label": "Joint 2 shoulder", "min": 0.0, "max": 90.0, "start": 0.0, "enabled": 1},
-    {"label": "Joint 3", "min": 0.0, "max": 90.0, "start": 0.0, "enabled": 1},
-    {"label": "Joint 4", "min": 0.0, "max": 180.0, "start": 0.0, "enabled": 1},
-    {"label": "Joint 5", "min": 0.0, "max": 180.0, "start": 0.0, "enabled": 1},
-    {"label": "Joint 6", "min": 0.0, "max": 180.0, "start": 0.0, "enabled": 0},
+    {"label": "Joint 1", "enabled": 0,
+     "ref_raw": 0.0, "ref_offset": 0.0, "direction": 1,
+     "min_raw": 0.0, "max_raw": 90.0},
+    {"label": "Joint 2 shoulder", "enabled": 1,
+     "ref_raw": 305.0, "ref_offset": 90.0, "direction": 1,
+     "min_raw": 91.8, "max_raw": 9.2},
+    {"label": "Joint 3", "enabled": 1,
+     "ref_raw": 203.5, "ref_offset": 0.0, "direction": 1,
+     "min_raw": 0.0, "max_raw": 90.0},
+    {"label": "Joint 4", "enabled": 1,
+     "ref_raw": 264.3, "ref_offset": 0.0, "direction": 1,
+     "min_raw": 0.0, "max_raw": 180.0},
+    {"label": "Joint 5", "enabled": 1,
+     "ref_raw": 83.2, "ref_offset": 0.0, "direction": 1,
+     "min_raw": 0.0, "max_raw": 180.0},
+    {"label": "Joint 6", "enabled": 0,
+     "ref_raw": 0.0, "ref_offset": 0.0, "direction": 1,
+     "min_raw": 0.0, "max_raw": 180.0},
 ]
 
 # ============================================================================
