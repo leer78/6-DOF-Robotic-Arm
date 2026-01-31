@@ -83,7 +83,6 @@ class ArmGUI(tk.Tk):
             messagebox.showwarning("Serial Connection", 
                 f"Could not connect to serial port:\n{e}\n\nGUI will run in offline mode.")
             self.serial_conn = None
-            #_serial_conn = None
     
     def _process_telemetry(self, line: str):
         """Process telemetry packet and update joint boxes with encoder values."""
@@ -206,7 +205,18 @@ class ArmGUI(tk.Tk):
         self.cmd_menu.pack(side="left")
         self._update_available_commands()
 
-        # 5. Send Command button (height=2 to match ESTOP and MODE display, right-aligned)
+        # 5. Grip Control section (slider for SG90 end effector)
+        grip_section = ttk.Frame(control_frame)
+        grip_section.pack(side="left", padx=8)
+        ttk.Label(grip_section, text="Grip Control:", font=("TkDefaultFont", 10, "bold")).pack(side="left", padx=(0, 4))
+        self.grip_var = tk.IntVar(value=90)  # Default to middle position
+        self.grip_slider = ttk.Scale(grip_section, from_=68, to=112, orient="horizontal", 
+                                      length=150, variable=self.grip_var, command=self._on_grip_slider_changed)
+        self.grip_slider.pack(side="left", padx=2)
+        self.grip_value_label = ttk.Label(grip_section, text="90°", width=5)
+        self.grip_value_label.pack(side="left", padx=2)
+
+        # 6. Send Command button (height=2 to match ESTOP and MODE display, right-aligned)
         self.send_btn = tk.Button(control_frame, text="Send\nCommand", command=self._on_send,
                   bg="#2e7d32", fg="white", font=("TkDefaultFont", 11, "bold"),
                   width=20, height=2)
@@ -364,9 +374,16 @@ class ArmGUI(tk.Tk):
                 packet = serial_protocol.build_packet(TYPE="CMD", CMD="ESTOP", current_mode=self.mode, STOP="ALL")
                 
             elif selected_cmd == "CALIBRATE_JOINT":
-                # Start calibration from joint 1
-                self._calib.start()
+                # Start calibration from first enabled joint
+                self._calib.start(self.joint_boxes)
                 return  # No packet to send, just start listening
+            
+            elif selected_cmd == "GRIP_CNTL":
+                # Build GRIP_CNTL command with slider value
+                grip_angle = int(self.grip_var.get())
+                packet = serial_protocol.build_packet(TYPE="CMD", CMD="GRIP_CNTL", current_mode=self.mode, GRIP_ANGLE=grip_angle)
+                logger.info(f"Sending GRIP_CNTL: angle={grip_angle}°")
+                
             else:
                 messagebox.showerror("Error", f"Unknown command: {selected_cmd}")
                 return
@@ -424,6 +441,11 @@ class ArmGUI(tk.Tk):
                 
         except serial_protocol.ProtocolError as e:
             messagebox.showerror("Protocol Error", f"Failed to build ESTOP packet:\n{str(e)}")
+
+    def _on_grip_slider_changed(self, value):
+        """Update grip value label when slider moves"""
+        grip_angle = int(float(value))
+        self.grip_value_label.config(text=f"{grip_angle}°")
 
     def _on_close(self):
         """Clean shutdown on window close"""

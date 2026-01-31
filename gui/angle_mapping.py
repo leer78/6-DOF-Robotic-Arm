@@ -74,6 +74,7 @@ def get_logical_limits(joint_idx: int) -> tuple:
     """Compute logical min/max angles from raw calibration values.
     
     Uses unwrapped deltas to handle AS5600 wrap-around correctly.
+    For Joint 6 (servo), returns raw limits directly (1:1 mapping).
     
     Args:
         joint_idx: Joint index (0-5)
@@ -82,6 +83,12 @@ def get_logical_limits(joint_idx: int) -> tuple:
         (min_deg, max_deg) tuple - always min < max
     """
     j = config.JOINTS[joint_idx]
+    
+    # Joint 6 (index 5) is servo-controlled with 1:1 linear mapping
+    # Return raw limits directly (no unwrapping needed)
+    if joint_idx == 5:
+        return (j["min_raw"], j["max_raw"])
+    
     ref_raw = j["ref_raw"]
     ref_offset = j["ref_offset"]
     direction = j["direction"]
@@ -102,15 +109,22 @@ def raw_to_logical(raw: float, joint_idx: int) -> float:
     """Convert raw encoder angle to logical angle for display/IK.
     
     Handles AS5600 wrap-around by unwrapping the delta from ref_raw.
+    For Joint 6 (servo), returns raw angle directly (1:1 mapping).
     
     Args:
-        raw: Raw encoder angle from Teensy (0-360)
+        raw: Raw encoder angle from Teensy (0-360), or servo angle for Joint 6
         joint_idx: Joint index (0-5)
     
     Returns:
         Logical angle clamped to computed [min_deg, max_deg]
     """
     j = config.JOINTS[joint_idx]
+    
+    # Joint 6 (index 5) is servo-controlled with 1:1 linear mapping
+    # Bypass AS5600 unwrapping logic entirely
+    if joint_idx == 5:
+        # Direct pass-through: clamp to 60-180° servo range (default 120°)
+        return max(60.0, min(180.0, raw))
     
     # Unwrap delta relative to reference point
     delta = _unwrap_delta(raw - j["ref_raw"])
@@ -127,15 +141,22 @@ def logical_to_raw(logical: float, joint_idx: int) -> float:
     """Convert logical angle to raw encoder angle for sending to Teensy.
     
     Inverts the mapping and wraps result to [0, 360) for AS5600.
+    For servo-controlled joints (Joint 6), returns logical angle directly (1:1 mapping).
     
     Args:
         logical: Logical angle from UI/IK
         joint_idx: Joint index (0-5)
     
     Returns:
-        Raw encoder angle for Teensy (0-360)
+        Raw encoder angle for Teensy (0-360), or servo angle for Joint 6 (0-180)
     """
     j = config.JOINTS[joint_idx]
+    
+    # Joint 6 (index 5) is servo-controlled with 1:1 linear mapping
+    # Bypass AS5600 unwrapping/wrapping logic entirely
+    if joint_idx == 5:
+        # Direct pass-through: clamp to 60-180° servo range (default 120°)
+        return max(60.0, min(180.0, logical))
     
     # Clamp logical to computed limits first
     min_deg, max_deg = get_logical_limits(joint_idx)

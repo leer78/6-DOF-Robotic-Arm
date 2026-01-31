@@ -1,4 +1,5 @@
 #include <Wire.h>
+#include <Servo.h>
 #include "controls_config.h"
 #include <AS5600.h>
 #include <Arduino.h>
@@ -27,9 +28,13 @@ bool jointEnabled[NUM_JOINTS] = {
 // Current encoder readings
 float encoderAngles[NUM_ENCODERS] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 
-// Blink pattern timing
-unsigned long lastBlinkMs = 0;
-bool ledState = false;
+// SG90 gripper servo (end effector)
+Servo sg90Gripper;
+int gripperTargetAngle = SG90_DEFAULT_ANGLE;  // Current target angle for gripper
+
+// Joint 6 servo (25kg digital servo, open-loop control)
+Servo joint6Servo;
+float joint6LastCommandedAngle = 0.0;  // Track last commanded angle for telemetry
 
 // ============================================================================
 // HARDWARE / UTILITY
@@ -54,32 +59,7 @@ int readButton() {
   return latchedState;
 }
 
-// Blink function: patterns depend on current mode
-void blinkPattern() {
-  unsigned long now = millis();
-  
-  if (currentMode == MODE_IDLE) {
-    // Mode 0: No blinking - keep LED off
-    //digitalWrite(LED_pin, LOW);
-    ledState = false;
-  }
-  else if (currentMode == MODE_CALIBRATION) {
-    // Mode 1: Slow blink (once every 3 sec)
-    if ((now - lastBlinkMs) >= 3000) {
-      lastBlinkMs = now;
-      ledState = !ledState;
-      //digitalWrite(LED_pin, ledState ? HIGH : LOW);
-    }
-  }
-  else if (currentMode == MODE_MOVE) {
-    // Mode 2: Very fast blink (100ms on/off)
-    if ((now - lastBlinkMs) >= 100) {
-      lastBlinkMs = now;
-      ledState = !ledState;
-      //digitalWrite(LED_pin, ledState ? HIGH : LOW);
-    }
-  }
-}
+
 
 // Use the AS5600 library's API (readAngle()) and the TCA9548A mux
 AS5600 encoder;
@@ -89,13 +69,16 @@ const float RAW_TO_DEG = 360.0 / 4096.0; // 0.087890625
 
 // Map each joint index (0-5) to its TCA9548A mux channel using config defines.
 // This ensures all channel assignments are centralized in controls_config.h.
+// NOTE: Joint 6 (index 5) is servo-controlled and has no encoder.
+// Channel 7 is reserved but not used - set to 0 as placeholder.
 const uint8_t jointMuxChannels[NUM_ENCODERS] = {
   JOINT1_MUX_CH,
   JOINT2_MUX_CH,
   JOINT3_MUX_CH,
   JOINT4_MUX_CH,
   JOINT5_MUX_CH,
-  JOINT6_MUX_CH
+  0
+  //JOINT6_MUX_CH
 };
 
 // Select which channel on the TCA9548A to use (0-7)
@@ -147,8 +130,16 @@ void scanTCAChannels() {
 
 // Read all encoder positions and update encoderAngles[]
 // Only read encoders for joints that are enabled
+// NOTE: Joint 6 (index 5) uses a servo with no encoder - always skip it
 void readEncoders() {
   for (int i = 0; i < NUM_ENCODERS; i++) {
+    // Joint 6 (index 5) is servo-controlled with no encoder - skip entirely
+    // Do not attempt I2C communication on mux channel 7 for Joint 6
+    if (i == 5) {
+      encoderAngles[i] = joint6LastCommandedAngle;  // Use last commanded angle
+      continue;
+    }
+    
     // Skip reading disabled joints to avoid hanging on unconnected encoders
     if (!jointEnabled[i]) {
       encoderAngles[i] = 0.0;  // Set to 0 for disabled joints
@@ -177,28 +168,7 @@ void readEncoders() {
   Wire.endTransmission();
 }
 
-// *** DEBUG MODE (COMMENTED OUT) - Uncomment for standalone testing ***
-// Prints encoder readings in human-readable format for Arduino Serial Monitor
-/*
-void printEncoderDebug() {
-  Serial.print("Encoders: ");
-  for (int i = 0; i < NUM_ENCODERS; i++) {
-    Serial.print("J");
-    Serial.print(i + 1);
-    Serial.print("=");
-    if (encoderAngles[i] < 0) {
-      Serial.print("ERR");  // Encoder not connected
-    } else {
-      Serial.print(encoderAngles[i], 2);
-      Serial.print("°");
-    }
-    if (i < NUM_ENCODERS - 1) Serial.print(" | ");
-  }
-  Serial.print(" | Btn=");
-  Serial.print(readButton());
-  Serial.println();
-}
-*/
+
 
 // Send telemetry packet: TYPE=DATA,CMD=JOINT_ANGLES,ENCODER_1_ANGLE=X.X,...,BUTTON=N\n
 // Only sends encoder angles for joints that are enabled
@@ -209,8 +179,15 @@ void sendTelemetry() {
   }
   
   Serial.print("TYPE=DATA,CMD=JOINT_ANGLES");
-  // Only send encoder data for enabled joints
+  // Send encoder data for enabled joints
+  // Joint 6 (index 5) always sends last commanded angle (no encoder)
   for (int i = 0; i < NUM_ENCODERS; i++) {
+    // Joint 6 is servo-controlled - always send its last commanded angle
+    if (i == 5) {
+      Serial.print(",ENCODER_6_ANGLE=");
+      Serial.print(joint6LastCommandedAngle, 1);
+      continue;
+    }
     if (jointEnabled[i]) {
       Serial.print(",ENCODER_");
       Serial.print(i + 1);
@@ -230,10 +207,6 @@ void sendAck(const String& originalPacket) {
   String ack = originalPacket;
   ack.replace("TYPE=CMD", "TYPE=ACK");
   Serial.println(ack);
-  // Single blink to indicate ACK was sent
-  digitalWrite(LED_pin, HIGH);
-  delay(1000);               // short visible blink
-  digitalWrite(LED_pin, LOW);
 }
 
 // ============================================================================
@@ -292,7 +265,6 @@ void parseAndExecutePacket(const String& packet) {
     if (newMode >= 0 && newMode <= 3) {
       currentMode = newMode;
       sendAck(packet);
-      //digitalWrite(LED_pin, HIGH);
     }
   }
   
@@ -311,7 +283,6 @@ void parseAndExecutePacket(const String& packet) {
       }
     }
     sendAck(packet);
-    //digitalWrite(LED_pin, HIGH);
   }
   
   else if (cmd == CMD_JOINT_EN) {
@@ -329,7 +300,6 @@ void parseAndExecutePacket(const String& packet) {
       }
     }
     sendAck(packet);
-    //digitalWrite(LED_pin, HIGH);
   }
   
   else if (cmd == CMD_ESTOP) {
@@ -338,7 +308,6 @@ void parseAndExecutePacket(const String& packet) {
       jointEnabled[i] = false;
     }
     sendAck(packet);
-    //digitalWrite(LED_pin, HIGH);
   }
   
   else if (cmd == CMD_CALIBRATE_JOINT) {
@@ -349,11 +318,30 @@ void parseAndExecutePacket(const String& packet) {
       if (idEnd == -1) idEnd = packet.indexOf('\n', idPos);
       if (idEnd == -1) idEnd = packet.length();
       
-      //int jointId = packet.substring(idPos + 9, idEnd).toInt();
       // TODO: Implement calibration logic for joint (1-6)
     }
     sendAck(packet);
-    //digitalWrite(LED_pin, HIGH);
+  }
+  
+  else if (cmd == CMD_GRIP_CNTL) {
+    // Extract GRIP_ANGLE parameter and move SG90 gripper servo
+    int anglePos = packet.indexOf("GRIP_ANGLE=");
+    if (anglePos != -1) {
+      int angleEnd = packet.indexOf(',', anglePos);
+      if (angleEnd == -1) angleEnd = packet.indexOf('\n', anglePos);
+      if (angleEnd == -1) angleEnd = packet.length();
+      
+      int angle = packet.substring(anglePos + 11, angleEnd).toInt();
+      // Constrain to valid SG90 range
+      angle = constrain(angle, SG90_MIN_ANGLE, SG90_MAX_ANGLE);
+      gripperTargetAngle = angle;
+      
+      // Move gripper immediately in MOVE mode
+      if (currentMode == MODE_MOVE) {
+        sg90Gripper.write(gripperTargetAngle);
+      }
+    }
+    sendAck(packet);
   }
 }
 
@@ -366,31 +354,31 @@ void modeIdleCode() {
   // In IDLE mode, we maintain current joint enable states
   // Joints can be enabled/disabled via JOINT_EN commands
   // Safety: Emergency stop (ESTOP) command will disable all joints
-  
-  // Blink pattern for IDLE (none)
-  //blinkPattern();
-  // TODO: Add initialization/safety code
 }
 
 // MODE 1: CALIBRATION - Run calibration procedures
 void modeCalibrationCode() {
-  // Blink pattern for CALIBRATION (slow: once every 3 sec)
-  //blinkPattern();
-  // TODO: Implement calibration procedures
-  // - Move individual joints to home position
-  // - Store encoder offsets
-  // - Verify encoder readings
+  // Calibration procedures handled by GUI
+  // Teensy sends telemetry, GUI captures button presses
 }
 
 // MODE 2: MOVE - Execute movement commands
 void modeMoveCode() {
-  // Blink pattern for MOVE (very fast: 100ms on/off)
-  //blinkPattern();
   // Move each enabled joint to target angle
   for (int i = 0; i < NUM_JOINTS; i++) {
     if (jointEnabled[i]) {
-      // TODO: Write target angle to servo/motor controller
-      // servo[i].write(jointTargetAngles[i]);
+      // Joint 6 (index 5) is servo-controlled
+      if (i == 5) {
+        // Direct servo control - range 60-180° is within Servo.write() limits
+        int servoAngle = constrain((int)jointTargetAngles[5], 
+                                   JOINT6_SERVO_MIN_ANGLE, 
+                                   JOINT6_SERVO_MAX_ANGLE);
+        joint6Servo.write(servoAngle);
+        joint6LastCommandedAngle = jointTargetAngles[5];
+      } else {
+        // TODO: Write target angle to stepper motor controller
+        // stepper[i].moveTo(jointTargetAngles[i]);
+      }
     }
   }
 }
@@ -426,6 +414,18 @@ void setup() {
   // Initialize AS5600 library
   encoder.begin();
   Serial.println("AS5600 library initialized");
+
+  // Initialize SG90 gripper servo (end effector open/close)
+  sg90Gripper.attach(SG90_GRIPPER_pin);
+  sg90Gripper.write(SG90_DEFAULT_ANGLE);
+  Serial.println("SG90 gripper servo initialized");
+
+  // Initialize Joint 6 servo (25kg digital servo, open-loop control)
+  // Uses JOINT6_SERVO_pin (Pin 29) - range 60-180° within Servo.write() limits
+  joint6Servo.attach(JOINT6_SERVO_pin);
+  joint6Servo.write(JOINT6_SERVO_DEFAULT_ANGLE);  // Start at 120°
+  joint6LastCommandedAngle = JOINT6_SERVO_DEFAULT_ANGLE;
+  Serial.println("Joint 6 servo initialized at 120 deg default position");
 
   pinMode(LED_pin, OUTPUT);
   digitalWrite(LED_pin, LOW);

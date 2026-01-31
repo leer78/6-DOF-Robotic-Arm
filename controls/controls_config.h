@@ -11,12 +11,8 @@
 // --- Pin definitions (all names end with _pin) ---
 #define LED_pin 13
 #define ENABLE_pin 8
-#define BASE_SERVO_pin 2
-#define SHOULDER_SERVO_pin 3
-#define ELBOW_SERVO_pin 4
-#define WRIST1_SERVO_pin 5
-#define WRIST2_SERVO_pin 6
-#define GRIPPER_SERVO_pin 7
+#define JOINT6_SERVO_pin 29
+#define SG90_GRIPPER_pin 30  // End effector SG90 servo (grip open/close)
 #define PUSH_SWITCH_pin 37
 
 // I2C / Multiplexer
@@ -27,14 +23,16 @@
 #define MUX_DELAY 5
 
 // Map joints to TCA9548A mux channels
-// Joint 1 on sc2/sd2, Joint 6 on sc7/sd7 (both disabled/not connected yet)
+// Joint 1 on sc2/sd2 (disabled/not connected yet)
 // Joints 2-5 are on channels 3-6 and connected
+// Joint 6 uses a 25kg digital servo (open-loop, no encoder) on JOINT6_SERVO_pin
 #define JOINT1_MUX_CH 2  // Not connected (disabled)
 #define JOINT2_MUX_CH 3  // Connected encoder
 #define JOINT3_MUX_CH 4  // Connected encoder
 #define JOINT4_MUX_CH 5  // Connected encoder
 #define JOINT5_MUX_CH 6  // Connected encoder
-#define JOINT6_MUX_CH 7  // Not connected (disabled)
+// JOINT6_MUX_CH not defined - Joint 6 is servo-controlled (no encoder)
+// #define JOINT6_MUX_CH 7  // DISABLED: Joint 6 uses servo, not encoder
 
 // ============================================================================
 // SERIAL PROTOCOL CONFIGURATION (mirrors gui/config.py)
@@ -52,6 +50,18 @@
 #define CMD_JOINT_EN "JOINT_EN"
 #define CMD_ESTOP "ESTOP"
 #define CMD_CALIBRATE_JOINT "CALIBRATE_JOINT"
+#define CMD_GRIP_CNTL "GRIP_CNTL"
+
+// SG90 Gripper servo limits (end effector open/close)
+#define SG90_MIN_ANGLE 68   // Fully closed position
+#define SG90_MAX_ANGLE 112  // Fully open position
+#define SG90_DEFAULT_ANGLE 90  // Default position
+
+// Joint 6 servo configuration (25kg digital servo)
+// Range: 60-180° (within Servo.write() 0-180° limit, so no mapping needed)
+#define JOINT6_SERVO_MIN_ANGLE 60    // Minimum position (degrees)
+#define JOINT6_SERVO_MAX_ANGLE 180   // Maximum position (degrees)
+#define JOINT6_SERVO_DEFAULT_ANGLE 120  // Default/neutral position (degrees)
 
 // Joint configuration
 #define NUM_JOINTS 6
@@ -60,12 +70,13 @@
 
 // Joint enable defaults (0 = disabled, 1 = enabled)
 // All joints disabled by default until JOINT_EN signal received from GUI
+// Joint 6 is enabled by default (servo-controlled, open-loop)
 #define DEFAULT_JOINT1_EN 0
 #define DEFAULT_JOINT2_EN 1
 #define DEFAULT_JOINT3_EN 1
 #define DEFAULT_JOINT4_EN 1
 #define DEFAULT_JOINT5_EN 1
-#define DEFAULT_JOINT6_EN 0
+#define DEFAULT_JOINT6_EN 1  // Servo-controlled joint (open-loop, no calibration needed)
 
 
 // Telemetry configuration

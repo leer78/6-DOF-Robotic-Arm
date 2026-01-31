@@ -30,17 +30,55 @@ class CalibrationState:
         self.step = 0      # Current step (0-2)
         self.last_btn = 0  # For edge detection
     
+    def _is_joint_enabled(self, joint_idx: int, joint_boxes: list) -> bool:
+        """Check if a joint is enabled for calibration.
+        
+        NOTE: Joint 6 (index 5) is servo-controlled and cannot be calibrated.
+        Always returns False for Joint 6.
+        """
+        # Joint 6 (index 5) is servo-controlled - never allow calibration
+        if joint_idx == 5:
+            return False
+        if joint_idx >= len(joint_boxes):
+            return False
+        enabled, _ = joint_boxes[joint_idx].get_state()
+        return enabled
+    
+    def _find_next_enabled_joint(self, start_from: int, joint_boxes: list) -> int:
+        """Find the next enabled joint starting from start_from.
+        
+        NOTE: Joint 6 (index 5) is servo-controlled and cannot be calibrated.
+        Calibration only iterates through Joints 1-5 (indices 0-4).
+        
+        Returns:
+            Joint index (0-4) or None if no enabled joints found
+        """
+        # Only iterate through Joints 1-5 (indices 0-4)
+        # Joint 6 (index 5) is servo-controlled with no encoder - skip entirely
+        for j in range(start_from, 5):  # Changed from 6 to 5 to exclude Joint 6
+            if self._is_joint_enabled(j, joint_boxes):
+                return j
+        return None
+    
     @property
     def is_active(self) -> bool:
         """True if calibration is in progress."""
         return self.joint is not None
     
-    def start(self):
-        """Start calibration from joint 0."""
-        self.joint = 0
+    def start(self, joint_boxes: list):
+        """Start calibration from first enabled joint.
+        
+        Args:
+            joint_boxes: List of JointBox widgets to check enabled state
+        """
+        self.joint = self._find_next_enabled_joint(0, joint_boxes)
+        if self.joint is None:
+            logger.warning("No enabled joints found for calibration")
+            return
+        
         self.step = 0
         self.last_btn = 0
-        logger.info(f"Calibration started: Joint {self.joint + 1}, Step {self.step}")
+        logger.info(f"Calibration started: Joint {self.joint + 1} (enabled joints only), Step {self.step}")
     
     def stop(self):
         """Stop calibration."""
@@ -90,13 +128,12 @@ class CalibrationState:
             # All 3 captures done for this joint
             self._finalize_joint(j, joint_boxes)
             
-            # Move to next joint
+            # Move to next enabled joint
             self.step = 0
-            self.joint += 1
+            self.joint = self._find_next_enabled_joint(self.joint + 1, joint_boxes)
             
-            if self.joint >= 6:
-                self.joint = None
-                logger.info("All joints calibration complete")
+            if self.joint is None:
+                logger.info("All enabled joints calibration complete")
                 return True
         
         return False

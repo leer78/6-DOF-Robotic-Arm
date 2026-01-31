@@ -50,9 +50,11 @@ JOINTS = [
     {"label": "Joint 5", "enabled": 1,
      "ref_raw": 83.2, "ref_offset": 0.0, "direction": 1,
      "min_raw": 12.8, "max_raw": 177.0},
-    {"label": "Joint 6", "enabled": 0,
-     "ref_raw": 0.0, "ref_offset": 0.0, "direction": 1,
-     "min_raw": 0.0, "max_raw": 180.0},
+    {"label": "Joint 6", "enabled": 1,
+     "ref_raw": 120.0, "ref_offset": 120.0, "direction": 1,
+     "min_raw": 60.0, "max_raw": 180.0},
+    # Joint 6 is servo-controlled (25kg digital servo)
+    # Default position: 120°, Range: 60°-180° (±60° from center)
 ]
 
 # ============================================================================
@@ -117,6 +119,12 @@ PROTOCOL_SCHEMAS = {
             "key_constraints": {
                 "JOINT_ID": [1, 2, 3, 4, 5, 6]
             }
+        },
+        "GRIP_CNTL": {
+            "allowed_modes": [2],  # Only in MOVE mode
+            "required_keys": ["GRIP_ANGLE"],
+            "optional_keys": [],
+            "key_constraints": {}  # Float value 0-180, range checked at Teensy
         }
     },
     "DATA": {
@@ -145,6 +153,3 @@ MODE_LABELS = {
     2: "MOVE",
     3: "RESERVED"
 }
-
-# Packet format settings (legacy, to be deprecated)
-# We will send a single CSV line: ESTOP, j0_enable, j0_pos, j1_enable, j1_pos, ...\n

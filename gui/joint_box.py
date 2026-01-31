@@ -7,13 +7,12 @@ Shows both raw (from encoder) and logical (mapped) angles.
 
 import tkinter as tk
 from tkinter import ttk
-import math
 
 from angle_mapping import raw_to_logical, get_logical_limits
 
 
 class JointBox(ttk.LabelFrame):
-    """Widget for a single joint: shows angle dial, slider, and current readings."""
+    """Widget for a single joint: shows slider and current readings."""
     
     def __init__(self, parent, idx: int, cfg: dict):
         """
@@ -64,21 +63,15 @@ class JointBox(ttk.LabelFrame):
                                          foreground="#888888")
         self.raw_angle_label.pack(anchor="e")
 
-        # Angle display canvas (circle + rotating line)
-        self.canvas_size = 140
-        self.canvas = tk.Canvas(self, width=self.canvas_size, height=self.canvas_size)
-        self.canvas.grid(row=1, column=0, padx=6, pady=(2, 6))
-        self._draw_canvas()
-
         # Slider
         self.scale = ttk.Scale(self, from_=self.min_angle, to=self.max_angle,
                        orient=tk.HORIZONTAL, variable=self.angle,
                        command=self._on_scale)
-        self.scale.grid(row=2, column=0, sticky="ew", padx=6)
+        self.scale.grid(row=1, column=0, sticky="ew", padx=6)
 
         # Min / Max labels at the ends of the slider
         label_row = ttk.Frame(self)
-        label_row.grid(row=3, column=0, sticky="ew", padx=6)
+        label_row.grid(row=2, column=0, sticky="ew", padx=6)
         self.min_label = ttk.Label(label_row, text=f"{self.min_angle:.1f}°")
         self.min_label.pack(side="left")
         self.max_label = ttk.Label(label_row, text=f"{self.max_angle:.1f}°")
@@ -86,55 +79,15 @@ class JointBox(ttk.LabelFrame):
 
         # Current value label
         self.val_label = ttk.Label(self, text=f"{start:.1f}°")
-        self.val_label.grid(row=4, column=0, sticky="e", padx=6, pady=(2, 6))
+        self.val_label.grid(row=3, column=0, sticky="e", padx=6, pady=(2, 6))
 
         self.columnconfigure(0, weight=1)
-        # draw initial angle line
-        self.line_id = None
-        self._update_canvas_line()
 
     def _on_scale(self, _event=None):
         """Handle slider movement."""
         v = self.angle.get()
         self.val_label.config(text=f"{v:.1f}°")
-        try:
-            self._update_canvas_line()
-        except Exception:
-            pass
 
-    def _draw_canvas(self):
-        """Draw base circle and quadrant labels."""
-        self.canvas.delete("all")
-        s = self.canvas_size
-        cx = cy = s // 2
-        r = int(s * 0.4)
-        # circle
-        self.canvas.create_oval(cx - r, cy - r, cx + r, cy + r, outline="black")
-        # quadrant ticks and labels
-        label_font = ("TkDefaultFont", 8)
-        self.canvas.create_text(cx + r - 12, cy, text="0", anchor="center", font=label_font)
-        self.canvas.create_text(cx, cy - r + 12, text="90", anchor="center", font=label_font)
-        self.canvas.create_text(cx - r + 12, cy, text="180", anchor="center", font=label_font)
-        self.canvas.create_text(cx, cy + r - 12, text="270", anchor="center", font=label_font)
-        self.line_id = None
-
-    def _update_canvas_line(self):
-        """Update the rotating line on the angle dial."""
-        ang = float(self.angle.get()) % 360.0
-        s = self.canvas_size
-        cx = cy = s // 2
-        r = int(s * 0.4)
-        rad = math.radians(ang)
-        x = cx + r * math.cos(rad)
-        y = cy - r * math.sin(rad)
-        # remove previous line
-        if self.line_id is not None:
-            try:
-                self.canvas.delete(self.line_id)
-            except Exception:
-                pass
-        self.line_id = self.canvas.create_line(cx, cy, x, y, fill="red", width=2)
-    
     def update_current_angle(self, raw_angle: float):
         """Update the current angle display from telemetry data (raw from Teensy)."""
         self.current_raw_angle = raw_angle
@@ -155,7 +108,6 @@ class JointBox(ttk.LabelFrame):
         if start_deg is not None:
             self.angle.set(start_deg)
             self.val_label.config(text=f"{start_deg:.1f}°")
-            self._update_canvas_line()
 
     def get_state(self) -> tuple:
         """Get current state.
