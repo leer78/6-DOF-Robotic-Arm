@@ -121,6 +121,12 @@ class CalibrationState:
         config.JOINTS[j][step_name] = raw_angle
         logger.info(f"Calibration: Joint {j + 1} {step_label} (raw)={raw_angle:.1f}°")
         
+        try:
+            import debug_logger
+            debug_logger.log_calibration_capture(j, step_label, raw_angle, self.step + 1)
+        except Exception:
+            pass
+        
         # Advance step
         self.step += 1
         
@@ -161,6 +167,19 @@ class CalibrationState:
         logger.info(f"Joint {j + 1} calibration complete:")
         logger.info(f"  Raw: ref={ref_raw:.1f}, min={jcfg['min_raw']:.1f}, max={jcfg['max_raw']:.1f}")
         logger.info(f"  Logical (computed): ref_offset={ref_offset:.1f}, min={min_logical:.1f}, max={max_logical:.1f}")
+        
+        try:
+            import debug_logger
+            debug_logger.log_calibration_complete(
+                j,
+                ref_raw=ref_raw,
+                min_raw=jcfg["min_raw"],
+                max_raw=jcfg["max_raw"],
+                min_logical=min_logical,
+                max_logical=max_logical,
+            )
+        except Exception:
+            pass
     
     def get_status(self) -> str:
         """Get human-readable status string."""

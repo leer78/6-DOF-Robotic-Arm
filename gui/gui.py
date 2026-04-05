@@ -19,6 +19,7 @@ import queue
 
 import config
 import serial_protocol
+import debug_logger
 from joint_box import JointBox
 from angle_mapping import raw_to_logical, logical_to_raw
 from calibration import CalibrationState
@@ -26,6 +27,9 @@ from calibration import CalibrationState
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+# Initialize file-based debug log as early as possible
+debug_logger.init()
 
 # Global serial connection
 _serial_conn = None
@@ -44,6 +48,11 @@ class ArmGUI(tk.Tk):
         self.mode = getattr(config, 'DEFAULT_MODE', 0)
         label = config.MODE_LABELS.get(self.mode, "") if hasattr(config, 'MODE_LABELS') else ""
         self.mode_var = tk.StringVar(value=f"{self.mode} - {label}")
+
+        # When True, sync sliders to live encoder readings on the next telemetry packet.
+        # Set when entering MOVE mode so the first JOINTS_TO_ANGLE reflects reality
+        # instead of jumping from the GUI's initialized slider position.
+        self._sync_sliders_on_next_telem = False
 
         # Packet logging (stores tuples of (timestamp, packet_string))
         self.sent_packets = deque(maxlen=50)  # Keep last 50 sent packets
@@ -72,14 +81,18 @@ class ArmGUI(tk.Tk):
     def _init_serial(self):
         """Initialize serial connection and start listener thread."""
         global _serial_conn
+        port = config.SERIAL_PORT.get("PORT", "?")
+        baud = config.SERIAL_PORT.get("BAUD", 115200)
         try:
             self.serial_conn = serial_protocol.connect_serial()
             _serial_conn = self.serial_conn
             serial_protocol.set_telemetry_handler(self._handle_telemetry)
             serial_protocol.start_listener(self.serial_conn)
             logger.info("Serial connection established and listener started")
+            debug_logger.log_serial_connect(port, baud, success=True)
         except serial_protocol.ProtocolError as e:
             logger.error(f"Failed to connect serial: {e}")
+            debug_logger.log_serial_connect(port, baud, success=False, error=str(e))
             messagebox.showwarning("Serial Connection", 
                 f"Could not connect to serial port:\n{e}\n\nGUI will run in offline mode.")
             self.serial_conn = None
@@ -92,14 +105,51 @@ class ArmGUI(tk.Tk):
             parsed = serial_protocol.parse_packet(line)
             if parsed.get("TYPE") == "DATA" and parsed.get("CMD") == "JOINT_ANGLES":
                 # Update each joint box with its encoder value
+                raw_angles = []
+                logical_angles = []
+                enabled_states = []
                 for i in range(min(len(self.joint_boxes), 6)):
                     encoder_key = f"ENCODER_{i+1}_ANGLE"
                     if encoder_key in parsed:
                         try:
                             angle = float(parsed[encoder_key])
                             self.joint_boxes[i].update_current_angle(angle)
+                            raw_angles.append(angle)
+                            logical_angles.append(self.joint_boxes[i].current_logical_angle)
                         except (ValueError, TypeError):
-                            pass
+                            raw_angles.append(float("nan"))
+                            logical_angles.append(float("nan"))
+                    else:
+                        raw_angles.append(float("nan"))
+                        logical_angles.append(float("nan"))
+                    en, _ = self.joint_boxes[i].get_state()
+                    enabled_states.append(bool(en))
+
+                # Log joint positions in MOVE (2) and CALIBRATION (1) modes
+                if self.mode in (1, 2):
+                    button = None
+                    try:
+                        button = int(parsed.get("BUTTON", 0))
+                    except (ValueError, TypeError):
+                        pass
+                    debug_logger.log_joint_positions(
+                        mode=self.mode,
+                        raw_angles=raw_angles,
+                        logical_angles=logical_angles,
+                        enabled=enabled_states,
+                        button=button,
+                    )
+
+                # On first telemetry after entering MOVE mode, snap sliders to actual
+                # encoder positions so the first JOINTS_TO_ANGLE is a no-op (no jump).
+                if self._sync_sliders_on_next_telem:
+                    self._sync_sliders_on_next_telem = False
+                    for box in self.joint_boxes:
+                        logical = box.current_logical_angle
+                        box.angle.set(logical)
+                        box.val_label.config(text=f"{logical:.1f}°")
+                    logger.info("Sliders synced to encoder positions on MOVE entry")
+                    debug_logger.log_event("Sliders synced to encoder positions on MOVE entry")
                 
                 # Calibration: button edge detection (1→0 captures)
                 if self._calib.is_active:
@@ -290,6 +340,8 @@ class ArmGUI(tk.Tk):
         ts_len = len(timestamp) + 3  # [timestamp]
         self.sent_text.tag_add("bold", "1.0", f"1.{ts_len}")
         self.sent_text.see("1.0")
+        
+        debug_logger.log_sent(packet_clean)
 
     def _log_received_packet(self, packet_str: str):
         """Log a received packet with bold timestamp"""
@@ -304,6 +356,8 @@ class ArmGUI(tk.Tk):
         ts_len = len(timestamp) + 3  # [timestamp]
         self.recv_text.tag_add("bold", "1.0", f"1.{ts_len}")
         self.recv_text.see("1.0")
+        
+        debug_logger.log_received(packet_clean)
 
     def _update_available_commands(self):
         """Update command dropdown to show only commands available in current mode"""
@@ -403,20 +457,29 @@ class ArmGUI(tk.Tk):
                 if selected_cmd == "SET_MODE":
                     sel = self.mode_menu.get()
                     new_mode = int(sel.split()[0])
+                    old_mode = self.mode
                     self.mode = new_mode
                     label_text = config.MODE_LABELS.get(self.mode, "UNKNOWN")
                     self.current_mode_label.config(text=f"MODE: {label_text.upper()}")
                     self._update_available_commands()
+                    debug_logger.log_mode_change(old_mode, new_mode)
+                    # Entering MOVE mode: queue a one-time slider sync so the first
+                    # JOINTS_TO_ANGLE reflects actual encoder positions, not GUI defaults.
+                    if new_mode == 2:  # MODE_MOVE
+                        self._sync_sliders_on_next_telem = True
                 
                 self._log_received_packet(f"TYPE=ACK,CMD={selected_cmd} (verified)")
+                debug_logger.log_ack(packet, verified=True)
                 logger.info(f"Command {selected_cmd} acknowledged")
                 
             except serial_protocol.ProtocolError as e:
+                debug_logger.log_ack(packet, verified=False, error=str(e))
                 messagebox.showerror("ACK Error", f"Failed to get ACK:\n{e}")
                 logger.error(f"ACK error: {e}")
                 
         except serial_protocol.ProtocolError as e:
             messagebox.showerror("Protocol Error", f"Failed to build packet:\n{str(e)}")
+            debug_logger.log_error(f"Packet build error ({selected_cmd}): {e}")
 
     def _do_estop(self):
         """ESTOP button handler - immediate stop"""
@@ -433,9 +496,13 @@ class ArmGUI(tk.Tk):
                 serial_protocol.send_packet(self.serial_conn, packet)
                 serial_protocol.wait_for_ack(packet, timeout=5.0)
                 self._log_received_packet("TYPE=ACK,CMD=ESTOP (verified)")
+                debug_logger.log_ack(packet, verified=True)
+                debug_logger.log_event("ESTOP acknowledged by Teensy")
                 messagebox.showwarning("ESTOP", "ESTOP command acknowledged by Teensy")
                 logger.info("ESTOP acknowledged")
             except serial_protocol.ProtocolError as e:
+                debug_logger.log_ack(packet, verified=False, error=str(e))
+                debug_logger.log_error(f"ESTOP ACK failed: {e}")
                 messagebox.showerror("ESTOP Error", f"ESTOP sent but no ACK received:\n{e}")
                 logger.error(f"ESTOP ACK error: {e}")
                 
@@ -456,6 +523,8 @@ class ArmGUI(tk.Tk):
                 logger.info("Serial connection closed")
         except Exception as e:
             logger.error(f"Error during shutdown: {e}")
+        debug_logger.log_event("Application closed")
+        debug_logger.close()
         self.destroy()
 
 
