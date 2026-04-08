@@ -57,7 +57,13 @@ def connect_serial():
         >>> conn.write(b"TYPE=CMD,CMD=SET_MODE,MODE=2\\n")
         >>> conn.close()
     """
-    import serial
+    try:
+        import serial
+    except ModuleNotFoundError as e:
+        raise ProtocolError(
+            "pyserial is not installed in the active Python environment. "
+            "Install it with: pip install pyserial"
+        ) from e
     import time
     
     port = config.SERIAL_PORT["PORT"]

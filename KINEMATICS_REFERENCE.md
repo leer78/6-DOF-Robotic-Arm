@@ -207,10 +207,10 @@ These are raw encoder ranges, converted to logical angles using the calibration 
 
 | Joint | Logical Min (approx) | Logical Max (approx) | Notes |
 |-------|---------------------|---------------------|-------|
-| J2 | ~−49° (raw 256°) | ~124° (raw 9.2°) | ref=305° raw → 90° logical |
-| J3 | ~−94.5° (raw 109°) | ~37.5° (raw 241°) | ref=203.5° raw → 0° logical |
+| J2 | ~−24.3° | ~+21.4° | ref=301.9° raw → 0° logical (direction=-1) |
+| J3 | ~−25.9° | ~+85.4° | ref=203.4° raw → 0° logical (direction=-1) |
 | J4 | n/a | n/a | Not wired yet |
-| J5 | ~−70.4° (raw 12.8°) | ~93.8° (raw 177°) | ref=83.2° raw → 0° logical |
+| J5 | ~−85.4° | ~+86.3° | ref=83.8° raw → 0° logical (direction=-1) |
 | J6 | 60° | 180° | Servo, open-loop |
 
 ---

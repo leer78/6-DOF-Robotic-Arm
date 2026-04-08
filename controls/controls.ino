@@ -63,6 +63,14 @@ static double pidInput[NUM_STEPPERS]    = {0};  // PID input  = shortest-path er
 static double pidOutput[NUM_STEPPERS]   = {0};  // PID output = velocity command (pulses/s)
 static double pidSetpoint[NUM_STEPPERS] = {0};  // always 0 (error-based formulation)
 
+// PID debug: snapshot of last-computed error and command for debug telemetry
+static float  pidDebugError[NUM_STEPPERS]  = {0};  // last error (deg, signed)
+static int32_t pidDebugCmd[NUM_STEPPERS]   = {0};  // last cmdPulsesPerS sent to ISR
+
+// Telemetry counter for PID debug packets (sent every N telemetry cycles in MOVE mode)
+static uint8_t pidDebugTelemCounter = 0;
+#define PID_DEBUG_TELEM_INTERVAL 5  // send PID debug every 5th telemetry cycle
+
 // PID instances (heap-allocated in setup, one per stepper joint)
 PID* posPID[NUM_STEPPERS];
 
@@ -222,8 +230,10 @@ void stepISR() {
     }
 
     bool desired_fwd = (cmd > 0);
+    if (MOTOR_DIR_INVERT[j]) desired_fwd = !desired_fwd;
+
     uint32_t abs_cmd;
-    if (desired_fwd) {
+    if (cmd > 0) {
       abs_cmd = (uint32_t)cmd;
     } else {
       abs_cmd = (uint32_t)(-cmd);
@@ -285,6 +295,29 @@ void sendTelemetry() {
   // Add button state
   Serial.print(",BUTTON=");
   Serial.print(readButton());
+  Serial.println();
+}
+
+
+// Send PID debug telemetry: error, PID output, command, target, DIR pin state per enabled joint.
+// Only called in MOVE mode, every PID_DEBUG_TELEM_INTERVAL telemetry cycles.
+// Format: TYPE=DATA,CMD=PID_DEBUG,J2_ERR=X.X,J2_OUT=X,J2_CMD=X,J2_TGT=X.X,J2_DIR=H,...
+void sendPidDebug() {
+  Serial.print("TYPE=DATA,CMD=PID_DEBUG");
+  for (int j = 0; j < NUM_STEPPERS; j++) {
+    if (!jointEnabled[j]) continue;
+    int jn = j + 1;  // 1-indexed joint number
+    Serial.print(",J");  Serial.print(jn);
+    Serial.print("_ERR="); Serial.print(pidDebugError[j], 2);
+    Serial.print(",J");  Serial.print(jn);
+    Serial.print("_OUT="); Serial.print((int32_t)pidOutput[j]);
+    Serial.print(",J");  Serial.print(jn);
+    Serial.print("_CMD="); Serial.print(pidDebugCmd[j]);
+    Serial.print(",J");  Serial.print(jn);
+    Serial.print("_TGT="); Serial.print(jointTargetAngles[j], 1);
+    Serial.print(",J");  Serial.print(jn);
+    Serial.print("_DIR="); Serial.print(isrState[j].cur_dir_forward ? "H" : "L");
+  }
   Serial.println();
 }
 
@@ -409,7 +442,13 @@ void parseAndExecutePacket(const String& packet) {
     for (int i = 1; i <= NUM_JOINTS; i++) {
       String val = extractField(packet, "JOINT_" + String(i) + "_EN=");
       if (val.length() > 0) {
-        jointEnabled[i - 1] = (val.toInt() == 1);
+        bool newEn = (val.toInt() == 1);
+        // Snap target to current position when enabling a joint so PID
+        // doesn't jump to a stale target from before the joint was disabled.
+        if (newEn && !jointEnabled[i - 1] && currentMode == MODE_MOVE) {
+          jointTargetAngles[i - 1] = encoderAngles[i - 1];
+        }
+        jointEnabled[i - 1] = newEn;
       }
     }
     updateStepperEnPins();  // Toggle physical EN pins to match new flags
@@ -504,7 +543,9 @@ void modeMoveCode() {
     if (error < -180.0f) error += 360.0f;
 
     // 3. Feed error to PID (setpoint is always 0, error-based formulation)
-    pidInput[j] = (double)error;
+    //    Arduino PID computes: output = Kp * (setpoint - input) = Kp * (0 - input)
+    //    So we negate the error: input = -error → output = Kp * (0 - (-error)) = +Kp * error
+    pidInput[j] = (double)(-error);
     posPID[j]->Compute();
 
     // 4. Apply deadband + clamp to [minPulsesPerS .. maxPulsesPerS]
@@ -521,7 +562,11 @@ void modeMoveCode() {
       if (newCmd < -maxPulsesPerS[j]) newCmd = -maxPulsesPerS[j];
     }
 
-    // 5. Atomic update of the shared ISR variable
+    // 5. Snapshot for PID debug telemetry
+    pidDebugError[j] = error;
+    pidDebugCmd[j]   = newCmd;
+
+    // 6. Atomic update of the shared ISR variable
     noInterrupts();
     cmdPulsesPerS[j] = newCmd;
     interrupts();
@@ -606,7 +651,8 @@ void setup() {
     digitalWriteFast(STEP_PINS[j], LOW);
 
     pinMode(DIR_PINS[j], OUTPUT);
-    digitalWriteFast(DIR_PINS[j], HIGH);  // Match initial cur_dir_forward = true (HIGH)
+    digitalWriteFast(DIR_PINS[j], HIGH);
+    isrState[j].cur_dir_forward = true;   // Sync ISR state with physical DIR=HIGH pin
 
     pinMode(EN_PINS[j], OUTPUT);
     digitalWrite(EN_PINS[j], EN_DISABLE_LEVEL);  // Start DISABLED (enabled only in MOVE mode)
@@ -660,6 +706,14 @@ void loop() {
       if (currentMode == MODE_CALIBRATION || currentMode == MODE_MOVE) {
         readEncoders();
         sendTelemetry();
+        // In MOVE mode, also send PID debug info every Nth cycle
+        if (currentMode == MODE_MOVE) {
+          pidDebugTelemCounter++;
+          if (pidDebugTelemCounter >= PID_DEBUG_TELEM_INTERVAL) {
+            pidDebugTelemCounter = 0;
+            sendPidDebug();
+          }
+        }
       }
       // Uncomment below for debug mode (direct Serial Monitor prints):
       // readEncoders();

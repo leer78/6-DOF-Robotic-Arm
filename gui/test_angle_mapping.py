@@ -60,20 +60,21 @@ def test_unwrap_delta():
 
 
 def test_joint_2_flow():
-    """Test Joint 2 which has wrap-around (ref=305°, max=9.2°)."""
-    print_separator("TEST: Joint 2 (Shoulder) - Full Flow with Wrap-Around")
+    """Test Joint 2 using the current calibration values from config.py."""
+    print_separator("TEST: Joint 2 (Shoulder) - Full Flow")
     
     joint_idx = 1
+    joint_cfg = config.JOINTS[joint_idx]
+    min_deg, max_deg = get_logical_limits(joint_idx)
     print_joint_config(joint_idx)
     
     # Test cases: raw angles the Teensy might send
     raw_test_values = [
-        (305.0, "At reference position"),
-        (9.2, "At max position (wrapped past 360°)"),
-        (256.0, "At min position"),
-        (340.0, "Between ref (305°) and 360°"),
-        (0.0, "At 0° (between 360° and max 9.2°)"),
-        (280.0, "Between min (256°) and ref (305°)"),
+        (joint_cfg["ref_raw"], "At reference position"),
+        (joint_cfg["max_raw"], "At the captured MAX calibration point"),
+        (joint_cfg["min_raw"], "At the captured MIN calibration point"),
+        (_wrap_360(joint_cfg["ref_raw"] + 30.0), "30° above reference in raw space"),
+        (_wrap_360(joint_cfg["ref_raw"] - 30.0), "30° below reference in raw space"),
     ]
     
     print(f"\n  FLOW 1: Teensy → GUI (raw_to_logical)")
@@ -86,11 +87,11 @@ def test_joint_2_flow():
     
     # Test reverse: logical angles for IK
     logical_test_values = [
-        (90.0, "Reference position (should give raw=305°)"),
-        (154.2, "Max position (should give raw≈9.2°)"),
-        (41.0, "Min position (should give raw=256°)"),
-        (120.0, "Somewhere in upper range"),
-        (60.0, "Somewhere in lower range"),
+        (joint_cfg["ref_offset"], f"Reference position (should give raw={joint_cfg['ref_raw']:.1f}°)"),
+        (max_deg, "Computed logical maximum"),
+        (min_deg, "Computed logical minimum"),
+        ((joint_cfg["ref_offset"] + max_deg) / 2.0, "Midpoint in upper range"),
+        ((joint_cfg["ref_offset"] + min_deg) / 2.0, "Midpoint in lower range"),
     ]
     
     print(f"\n  FLOW 2: GUI/IK → Teensy (logical_to_raw)")
@@ -183,10 +184,19 @@ def test_edge_cases():
     """Test edge cases and boundary conditions."""
     print_separator("TEST: Edge Cases")
     
-    print("\n  Testing Joint 2 near the 360°/0° boundary:")
+    print("\n  Testing Joint 2 around the calibrated reference and limits:")
     joint_idx = 1
+    joint_cfg = config.JOINTS[joint_idx]
     
-    edge_raws = [359.0, 360.0, 0.0, 1.0, 5.0, 9.2, 10.0]
+    edge_raws = [
+        _wrap_360(joint_cfg["ref_raw"] - 2.0),
+        _wrap_360(joint_cfg["ref_raw"] - 1.0),
+        joint_cfg["ref_raw"],
+        _wrap_360(joint_cfg["ref_raw"] + 1.0),
+        _wrap_360(joint_cfg["ref_raw"] + 2.0),
+        joint_cfg["min_raw"],
+        joint_cfg["max_raw"],
+    ]
     
     print(f"  {'Raw':<10} {'Logical':<12} {'Note'}")
     print(f"  {'-'*10} {'-'*12} {'-'*30}")
@@ -194,10 +204,12 @@ def test_edge_cases():
     for raw in edge_raws:
         logical = raw_to_logical(raw, joint_idx)
         note = ""
-        if raw == 9.2:
+        if abs(raw - joint_cfg["max_raw"]) < 0.01:
             note = "← max_raw position"
-        elif raw == 305:
+        elif abs(raw - joint_cfg["ref_raw"]) < 0.01:
             note = "← ref_raw position"
+        elif abs(raw - joint_cfg["min_raw"]) < 0.01:
+            note = "← min_raw position"
         print(f"  {raw:<10.2f} {logical:<12.2f} {note}")
 
 
@@ -226,8 +238,10 @@ def main():
     print_separator("TEST COMPLETE")
     print("\n  Review the output above to verify conversions are correct.")
     print("  Key things to check:")
-    print("    1. Joint 2 max (raw=9.2°) should give logical≈154.2°")
-    print("    2. Joint 2 min (raw=256°) should give logical=41°")
+    j2 = config.JOINTS[1]
+    j2_min_deg, j2_max_deg = get_logical_limits(1)
+    print(f"    1. Joint 2 logical max should clamp at ≈{j2_max_deg:.1f}°")
+    print(f"    2. Joint 2 logical min should clamp at ≈{j2_min_deg:.1f}°")
     print("    3. Round-trip conversions should have near-zero error")
     print("    4. IK angles should survive the round-trip unchanged\n")
 

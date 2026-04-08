@@ -105,6 +105,32 @@ def get_logical_limits(joint_idx: int) -> tuple:
     return (min(limit_from_min, limit_from_max), max(limit_from_min, limit_from_max))
 
 
+def is_raw_in_range(raw: float, joint_idx: int, tolerance: float = 2.0) -> bool:
+    """Check if a raw encoder angle falls within the joint's calibrated range.
+
+    Uses the same unwrapping logic as raw_to_logical but without clamping,
+    so we can detect when the encoder is beyond the calibrated limits.
+
+    Args:
+        raw: Raw encoder angle from Teensy (0-360)
+        joint_idx: Joint index (0-5)
+        tolerance: Extra degrees beyond limits before flagging out-of-range
+
+    Returns:
+        True if the raw angle maps to a logical angle within [min - tol, max + tol]
+    """
+    j = config.JOINTS[joint_idx]
+
+    if joint_idx == 5:  # Servo — simple linear range
+        return (j["min_raw"] - tolerance) <= raw <= (j["max_raw"] + tolerance)
+
+    delta = _unwrap_delta(raw - j["ref_raw"])
+    logical = delta * j["direction"] + j["ref_offset"]
+
+    min_deg, max_deg = get_logical_limits(joint_idx)
+    return (min_deg - tolerance) <= logical <= (max_deg + tolerance)
+
+
 def raw_to_logical(raw: float, joint_idx: int) -> float:
     """Convert raw encoder angle to logical angle for display/IK.
     

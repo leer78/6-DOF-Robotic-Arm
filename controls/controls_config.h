@@ -35,9 +35,9 @@
 //    Joint 5: STEP=27, DIR=28, EN=29
 //  Fill in remaining pins as hardware is connected.
 //                                                J1   J2   J3   J4   J5
-static const uint8_t STEP_PINS[NUM_STEPPERS] = {   0,   3,   8,   0,  27 };
-static const uint8_t DIR_PINS[NUM_STEPPERS]  = {   0,   4,   9,   0,  28 };
-static const uint8_t EN_PINS[NUM_STEPPERS]   = {   0,   5,  10,   0,  29 };
+static const uint8_t STEP_PINS[NUM_STEPPERS] = {   0,   3,   8,  11,  27 };
+static const uint8_t DIR_PINS[NUM_STEPPERS]  = {   0,   4,   9,  12,  28 };
+static const uint8_t EN_PINS[NUM_STEPPERS]   = {   0,   5,  10,  24,  29 };
 
 // ============================================================================
 // I2C / TCA9548A MULTIPLEXER
@@ -58,7 +58,7 @@ static const uint8_t MUX_CHANNELS[NUM_JOINTS] = {  2,  3,  4,  5,  6,  0 };
 // All stepper joints disabled by default until JOINT_EN received from GUI,
 // except Joint 6 (servo, open-loop — enabled immediately).
 //                                                          J1     J2    J3    J4     J5    J6
-static const bool DEFAULT_JOINT_EN[NUM_JOINTS] = {       false, true, true, false, true, false };
+static const bool DEFAULT_JOINT_EN[NUM_JOINTS] = {       false, true, true,  true, true, false };
 
 // ============================================================================
 // SERVO CONFIGURATION
@@ -128,6 +128,14 @@ static const bool DEFAULT_JOINT_EN[NUM_JOINTS] = {       false, true, true, fals
 // PER-JOINT STEPPER TUNING
 // ============================================================================
 
+// Motor direction inversion (per joint).
+// true  = invert DIR pin logic (positive PID output → DIR LOW instead of HIGH).
+// false = normal (positive PID output → DIR HIGH).
+// Set true for any joint whose motor+driver wiring causes it to move the wrong
+// way relative to increasing encoder angle.
+//                                                          J1     J2    J3     J4     J5
+static const bool MOTOR_DIR_INVERT[NUM_STEPPERS]          = { false, false, true,  true,  true  };
+
 // Microstep setting (TB6600 DIP).  Must match physical DIP switch setting.
 // J2 TB6600 is wired for 8 microsteps (1600 pulses/rev).
 //                                                          J1   J2   J3   J4   J5
@@ -136,14 +144,16 @@ static const uint16_t MICROSTEPS[NUM_STEPPERS]            = {  4,   8,   4,   4,
 // Full-step speed limits (before microstep multiplier).
 // Derived pulse limits computed in setup(): MIN_PULSES = MICROSTEPS × MIN_FULL_STEPS, etc.
 static const int32_t  MIN_FULL_STEPS_PER_S[NUM_STEPPERS]  = { 10,  10,  10,  10,  10 };
-static const int32_t  MAX_FULL_STEPS_PER_S[NUM_STEPPERS]  = {120, 120, 120, 120, 120 };
+static const int32_t  MAX_FULL_STEPS_PER_S[NUM_STEPPERS]  = {120, 240, 120, 120, 120 };
 
 // ============================================================================
 // PER-JOINT PID TUNING
 // ============================================================================
 // Start P-only (Ki=0, Kd=0) per control_plan.md.  Tune per joint.
+// NOTE: J2 Kp is 2× others to compensate for 8-microstep (vs 4) — equalizes deg/s response.
+// NOTE: J4 Kp is 3× others to compensate for 3:1 gear ratio — reduces gravity sag.
 //                                                    J1    J2    J3    J4    J5
-static const double PID_KP[NUM_STEPPERS]           = { 5.0,  5.0,  5.0,  5.0,  5.0 };
+static const double PID_KP[NUM_STEPPERS]           = { 5.0, 40.0,  5.0, 15.0,  5.0 };
 static const double PID_KI[NUM_STEPPERS]           = { 0.0,  0.0,  0.0,  0.0,  0.0 };
 static const double PID_KD[NUM_STEPPERS]           = { 0.0,  0.0,  0.0,  0.0,  0.0 };
 

@@ -39,17 +39,17 @@ JOINTS = [
      "ref_raw": 0.0, "ref_offset": 0.0, "direction": 1,
      "min_raw": 0.0, "max_raw": 90.0},
     {"label": "Joint 2 shoulder", "enabled": 1,  # AS5600 wired — RRR joint 1
-     "ref_raw": 305.0, "ref_offset": 90.0, "direction": 1,
-     "min_raw": 256.0, "max_raw": 9.2},
+     "ref_raw": 301.9, "ref_offset": 0.0, "direction": -1,
+     "min_raw": 326.2, "max_raw": 280.5},
     {"label": "Joint 3", "enabled": 1,            # AS5600 wired — RRR joint 2
-     "ref_raw": 203.5, "ref_offset": 0.0, "direction": 1,
-     "min_raw": 109.0, "max_raw": 241.0},  # min_raw: joint gravity-rests at ~111.7°, 2.7° margin
-    {"label": "Joint 4", "enabled": 0,        # No encoder — disabled (not part of RRR)
-     "ref_raw": 264.3, "ref_offset": 0.0, "direction": -1,
-     "min_raw": 356.0, "max_raw": 175.0},
+     "ref_raw": 203.4, "ref_offset": 0.0, "direction": -1,
+     "min_raw": 229.3, "max_raw": 114.0},
+    {"label": "Joint 4", "enabled": 1,            # AS5600 wired — wrist pitch
+     "ref_raw": 103.0, "ref_offset": 0.0, "direction": -1,
+     "min_raw": 50.0, "max_raw": 150.0},
     {"label": "Joint 5", "enabled": 1,            # AS5600 wired — RRR joint 3
-     "ref_raw": 83.2, "ref_offset": 0.0, "direction": 1,
-     "min_raw": 12.8, "max_raw": 177.0},
+     "ref_raw": 83.8, "ref_offset": 0.0, "direction": -1,
+     "min_raw": 169.2, "max_raw": 357.5},
     {"label": "Joint 6", "enabled": 0,        # No encoder — disabled (not part of RRR)
      "ref_raw": 120.0, "ref_offset": 120.0, "direction": 1,
      "min_raw": 60.0, "max_raw": 180.0},
@@ -135,6 +135,12 @@ PROTOCOL_SCHEMAS = {
             "key_constraints": {
                 "BUTTON": [0, 1]  # 0=not pressed, 1=pressed
             }
+        },
+        "PID_DEBUG": {
+            "allowed_modes": [2],  # Only in MOVE mode
+            "required_keys": [],   # Dynamic keys per enabled joint (J2_ERR, J2_CMD, etc.)
+            "optional_keys": [],
+            "key_constraints": {}
         }
     },
     "ACK": {

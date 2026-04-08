@@ -1,0 +1,25 @@
+========================================================================
+6-DOF ROBOTIC ARM -- DEBUG SESSION LOG
+Started : 2026-04-08 00:04:30
+Python  : 3.14.2  (win32)
+Log file: C:\Users\email\OneDrive\Desktop\Projects\Projects\robotarm\repo\6-DOF-Robotic-Arm\debug_logs\20260408_000430_log.txt
+========================================================================
+
+[CONFIG] Serial port : COM3 @ 115200 baud
+[CONFIG] Dry-run mode: False
+[CONFIG] Default mode: 0 (IDLE)
+[CONFIG] Num joints  : 6
+
+[CONFIG] Joint configuration:
+  #    Label                  Enabled    ref_raw  ref_off  dir  min_raw  max_raw
+  ---- ---------------------- --------- -------- -------- ---- -------- --------
+  J1   Joint 1                no             0.0      0.0    1      0.0     90.0
+  J2   Joint 2 shoulder       YES          301.9      0.0   -1    326.2    280.5
+  J3   Joint 3                YES          203.4      0.0   -1    229.3    114.0
+  J4   Joint 4                YES          103.0      0.0   -1     50.0    150.0
+  J5   Joint 5                YES           83.8      0.0   -1    169.2    357.5
+  J6   Joint 6                no           120.0    120.0    1     60.0    180.0
+
+========================================================================
+TIMELINE
+========================================================================

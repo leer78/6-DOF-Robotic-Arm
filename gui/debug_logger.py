@@ -224,6 +224,26 @@ def log_ack(packet: str, verified: bool, error: str = None):
         _writeln(f"[{_ts()}] [ACK  ] FAILED for: {packet.strip()} — {error}")
 
 
+def log_pid_debug(parsed: dict):
+    """Log PID debug telemetry from Teensy.
+
+    Extracts per-joint fields (Jn_ERR, Jn_OUT, Jn_CMD, Jn_TGT, Jn_DIR) and
+    formats them into one compact log block.
+    """
+    parts = []
+    for jn in range(1, 7):
+        err_key = f"J{jn}_ERR"
+        if err_key not in parsed:
+            continue
+        err = parsed.get(err_key, "?")
+        out = parsed.get(f"J{jn}_OUT", "?")
+        cmd = parsed.get(f"J{jn}_CMD", "?")
+        tgt = parsed.get(f"J{jn}_TGT", "?")
+        d   = parsed.get(f"J{jn}_DIR", "?")
+        parts.append(f"J{jn}[err={err} out={out} cmd={cmd} tgt={tgt} dir={d}]")
+    _writeln(f"[{_ts()}] [PID  ] {' | '.join(parts)}")
+
+
 def close():
     """Flush and close the log file, writing a session footer."""
     global _log_file

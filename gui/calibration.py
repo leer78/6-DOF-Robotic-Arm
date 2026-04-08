@@ -74,11 +74,12 @@ class CalibrationState:
         self.joint = self._find_next_enabled_joint(0, joint_boxes)
         if self.joint is None:
             logger.warning("No enabled joints found for calibration")
-            return
+            return False
         
         self.step = 0
         self.last_btn = 0
         logger.info(f"Calibration started: Joint {self.joint + 1} (enabled joints only), Step {self.step}")
+        return True
     
     def stop(self):
         """Stop calibration."""

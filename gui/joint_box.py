@@ -8,7 +8,7 @@ Shows both raw (from encoder) and logical (mapped) angles.
 import tkinter as tk
 from tkinter import ttk
 
-from angle_mapping import raw_to_logical, get_logical_limits
+from angle_mapping import raw_to_logical, get_logical_limits, is_raw_in_range
 
 
 class JointBox(ttk.LabelFrame):
@@ -21,7 +21,8 @@ class JointBox(ttk.LabelFrame):
             idx: Joint index (0-5)
             cfg: Joint config dict from config.JOINTS
         """
-        super().__init__(parent, text=cfg.get("label", f"Joint {idx+1}"))
+        self.base_title = cfg.get("label", f"Joint {idx+1}")
+        super().__init__(parent, text=self.base_title)
         self.idx = idx
         # Compute logical limits from raw calibration values
         self.min_angle, self.max_angle = get_logical_limits(idx)
@@ -34,6 +35,7 @@ class JointBox(ttk.LabelFrame):
         # Current encoder angles (raw from Teensy, logical after mapping)
         self.current_raw_angle = 0.0
         self.current_logical_angle = 0.0
+        self.out_of_range = False
 
         self._build_ui(start)
 
@@ -62,6 +64,12 @@ class JointBox(ttk.LabelFrame):
                                          font=("TkDefaultFont", 8), 
                                          foreground="#888888")
         self.raw_angle_label.pack(anchor="e")
+
+        # Out-of-range warning (hidden by default)
+        self.oor_label = tk.Label(angle_frame, text="⚠ OUT OF RANGE",
+                                  font=("TkDefaultFont", 8, "bold"),
+                                  fg="white", bg="#D32F2F")
+        # Not packed yet — shown/hidden via _set_out_of_range()
 
         # Slider
         self.scale = ttk.Scale(self, from_=self.min_angle, to=self.max_angle,
@@ -94,6 +102,17 @@ class JointBox(ttk.LabelFrame):
         self.current_logical_angle = raw_to_logical(raw_angle, self.idx)
         self.logical_angle_label.config(text=f"Angle: {self.current_logical_angle:.1f}°")
         self.raw_angle_label.config(text=f"Raw: {raw_angle:.1f}°")
+        self._set_out_of_range(not is_raw_in_range(raw_angle, self.idx))
+
+    def _set_out_of_range(self, oor: bool):
+        """Show or hide the out-of-range warning indicator."""
+        if oor == self.out_of_range:
+            return
+        self.out_of_range = oor
+        if oor:
+            self.oor_label.pack(anchor="e")
+        else:
+            self.oor_label.pack_forget()
     
     def update_range(self, min_deg: float = None, max_deg: float = None, start_deg: float = None):
         """Update slider range and labels after calibration (all values are logical degrees)."""
@@ -108,6 +127,15 @@ class JointBox(ttk.LabelFrame):
         if start_deg is not None:
             self.angle.set(start_deg)
             self.val_label.config(text=f"{start_deg:.1f}°")
+
+    def set_calibration_focus(self, is_active: bool, step_label=None):
+        """Update the title so the active calibration joint stands out."""
+        title = self.base_title
+        if is_active:
+            title += "  [CALIBRATING]"
+            if step_label:
+                title += f" {step_label.upper()}"
+        self.config(text=title)
 
     def get_state(self) -> tuple:
         """Get current state.
