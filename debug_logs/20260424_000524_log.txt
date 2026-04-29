@@ -1,0 +1,34 @@
+========================================================================
+6-DOF ROBOTIC ARM -- DEBUG SESSION LOG
+Started : 2026-04-24 00:05:24
+Python  : 3.14.2  (win32)
+Log file: C:\Users\email\OneDrive\Desktop\Projects\Projects\robotarm\repo\6-DOF-Robotic-Arm\debug_logs\20260424_000524_log.txt
+========================================================================
+
+[CONFIG] Serial port : COM3 @ 115200 baud
+[CONFIG] Dry-run mode: False
+[CONFIG] Default mode: 0 (IDLE)
+[CONFIG] Num joints  : 6
+
+[CONFIG] Joint configuration:
+  #    Label                  Enabled    ref_raw  ref_off  dir  min_raw  max_raw
+  ---- ---------------------- --------- -------- -------- ---- -------- --------
+  J1   Joint 1                YES          103.0      0.0   -1      0.0    360.0
+  J2   Joint 2 shoulder       no           301.9      0.0   -1    336.2    265.5
+  J3   Joint 3                no           201.4      0.0   -1    229.3    114.0
+  J4   Joint 4                no           103.0      0.0   -1    192.0      9.3
+  J5   Joint 5                no            83.8      0.0   -1    160.2    365.5
+  J6   Joint 6                no           120.0    120.0    1     60.0    180.0
+
+========================================================================
+TIMELINE
+========================================================================
+[00:05:27.017] [SERIAL] Connected: COM3 @ 115200 baud
+[00:05:35.708] [SEND ] TYPE=CMD,CMD=SET_MODE,MODE=0
+[00:05:35.708] [ACK  ] FAILED for: TYPE=CMD,CMD=SET_MODE,MODE=0 — Failed to send packet: WriteFile failed (PermissionError(13, 'The device does not recognize the command.', None, 22))
+[00:05:37.593] [EVENT] Application closed
+
+========================================================================
+SESSION ENDED -- duration: 0:00:12.694722
+========================================================================
+

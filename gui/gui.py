@@ -25,15 +25,15 @@ from angle_mapping import raw_to_logical, logical_to_raw, is_raw_in_range
 from calibration import CalibrationState
 import ik_solver
 
-# ── PRESET_1: Vertical pole sweep (x=140mm, ry=-179°) ───────────────────────
-# Two IK-verified poses that trace a vertical line 115mm apart.
-# Both have >15° margin from every joint limit (J2/J3/J4/J5).
+# ── PRESET_1: Exact +X-facing vertical sweep ──────────────────────────────────
+# With the branch-aware IK solver, the tool local z-axis can stay at ry=+90°
+# while sweeping 295 mm vertically at constant x=120 mm.
 _PRESET1_POINTS = [
-    (140.0, 0.0, 155.0, 0.0, -179.0, 0.0),  # BOTTOM  J2=+1.2 J3=+60.3 J5=+29.5
-    (140.0, 0.0, 270.0, 0.0, -179.0, 0.0),  # TOP     J2=-7.4 J3=+27.8 J5=+70.6
+    (120.0, 0.0, 200.0, 0.0, 90.0, 0.0),    # LOWER   J2=-14.1 J3=+87.4 J5=-73.3
+    (120.0, 0.0, 495.0, 0.0, 90.0, 0.0),    # UPPER   J2=-10.4 J3=-27.1 J5=+37.5
 ]
 _PRESET1_NAMES    = ["BOTTOM", "TOP"]
-_PRESET1_DELAY_MS = 5_000  # ms between moves
+_PRESET1_DELAY_MS = 2_000  # ms between moves
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')

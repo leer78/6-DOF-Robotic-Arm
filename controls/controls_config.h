@@ -7,6 +7,10 @@
 
 #define BAUD_RATE 115200
 
+// Sentinel for un-wired / unused pins.  Must be > max valid Teensy 4.1 pin (0-41).
+// Use in place of literal 0 so Teensy pin 0 can be used as a real STEP/DIR/EN pin.
+#define UNUSED_PIN 255
+
 // ============================================================================
 // SYSTEM DIMENSIONS
 // ============================================================================
@@ -29,15 +33,14 @@
 
 // Per-joint stepper pins: {STEP, DIR, EN}
 // Index: [0]=J1  [1]=J2  [2]=J3  [3]=J4  [4]=J5
-// Use 0 as placeholder for un-wired joints (must be disabled via jointEnabled[]).
+// Use UNUSED_PIN (255) as placeholder for un-wired joints (must be disabled via jointEnabled[]).
 //
-//  Wiring reference (from controls_test.ino — Joint 5 proven):
-//    Joint 5: STEP=27, DIR=28, EN=29
+//  Joint 1 bring-up: STEP=0, DIR=1, EN=2 (Teensy 4.1 pins 0/1/2 → TB6600 PUL+/DIR+/ENA+)
 //  Fill in remaining pins as hardware is connected.
 //                                                J1   J2   J3   J4   J5
 static const uint8_t STEP_PINS[NUM_STEPPERS] = {   0,   3,   8,  11,  27 };
-static const uint8_t DIR_PINS[NUM_STEPPERS]  = {   0,   4,   9,  12,  28 };
-static const uint8_t EN_PINS[NUM_STEPPERS]   = {   0,   5,  10,  24,  29 };
+static const uint8_t DIR_PINS[NUM_STEPPERS]  = {   1,   4,   9,  12,  28 };
+static const uint8_t EN_PINS[NUM_STEPPERS]   = {   2,   5,  10,  24,  29 };
 
 // ============================================================================
 // I2C / TCA9548A MULTIPLEXER
@@ -55,10 +58,10 @@ static const uint8_t MUX_CHANNELS[NUM_JOINTS] = {  2,  3,  4,  5,  6,  0 };
 // JOINT ENABLE DEFAULTS
 // ============================================================================
 // false = disabled at boot, true = enabled at boot.
-// All stepper joints disabled by default until JOINT_EN received from GUI,
-// except Joint 6 (servo, open-loop — enabled immediately).
-//                                                          J1     J2    J3    J4     J5    J6
-static const bool DEFAULT_JOINT_EN[NUM_JOINTS] = {       false, true, true,  true, true, false };
+// Joint 2 is the only stepper enabled for bring-up testing.
+// Joint 6 (servo) remains disabled unless you want it active too.
+//                                                          J1     J2     J3     J4     J5    J6
+static const bool DEFAULT_JOINT_EN[NUM_JOINTS] = {       true,  true, true, true, true, true };
 
 // ============================================================================
 // SERVO CONFIGURATION
@@ -153,7 +156,7 @@ static const int32_t  MAX_FULL_STEPS_PER_S[NUM_STEPPERS]  = {120, 240, 120, 120,
 // NOTE: J2 Kp is 2× others to compensate for 8-microstep (vs 4) — equalizes deg/s response.
 // NOTE: J4 Kp is 3× others to compensate for 3:1 gear ratio — reduces gravity sag.
 //                                                    J1    J2    J3    J4    J5
-static const double PID_KP[NUM_STEPPERS]           = { 5.0, 40.0,  5.0, 15.0,  5.0 };
+static const double PID_KP[NUM_STEPPERS]           = { 15.0, 120.0,  20.0, 15.0,  20.0 };
 static const double PID_KI[NUM_STEPPERS]           = { 0.0,  0.0,  0.0,  0.0,  0.0 };
 static const double PID_KD[NUM_STEPPERS]           = { 0.0,  0.0,  0.0,  0.0,  0.0 };
 

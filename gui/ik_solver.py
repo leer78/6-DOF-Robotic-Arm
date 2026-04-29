@@ -113,6 +113,15 @@ def _mat4_mul(A, B):
     ]
 
 
+def _wrap_to_pi(angle):
+    """Wrap an angle in radians to [-pi, +pi)."""
+    while angle >= math.pi:
+        angle -= 2.0 * math.pi
+    while angle < -math.pi:
+        angle += 2.0 * math.pi
+    return angle
+
+
 def _fk_position(q1, q2, q3, q4, q5, q6):
     """Compute FK end-effector position (x, y, z) for solution verification."""
     T = _dh_transform(q1, D1, 0, -math.pi/2)
@@ -171,23 +180,38 @@ def _solve_orientation_ik(q1, q2, q3, R_d):
     """
     Solve orientation IK for q4, q5, q6.
     R_d is the desired 3x3 rotation matrix.
-    Returns (q4, q5, q6) in radians.
+    Returns a list of candidate (q4, q5, q6) tuples in radians.
     """
     R03 = _R0_3(q1, q2, q3)
     R36 = _mat_mul(_mat_T(R03), R_d)
 
     cos_q5 = max(-1.0, min(1.0, R36[2][2]))
-    q5 = math.acos(cos_q5)
+    q5_mag = math.acos(cos_q5)
+    solutions = []
 
-    if abs(math.sin(q5)) > 1e-6:
+    if abs(math.sin(q5_mag)) > 1e-6:
+        # Wrist branch 1: positive q5 (current behavior)
         q4 = math.atan2(-R36[1][2], -R36[0][2])
-        q6 = math.atan2( R36[2][1],  R36[2][0])
+        q6 = math.atan2(R36[2][1], R36[2][0])
+        solutions.append((_wrap_to_pi(q4), _wrap_to_pi(q5_mag), _wrap_to_pi(q6)))
+
+        # Wrist branch 2: negative q5. The sign flip in sin(q5) must be
+        # compensated in q4/q6 so the same R36 is reconstructed.
+        q4_alt = math.atan2(R36[1][2], R36[0][2])
+        q6_alt = math.atan2(-R36[2][1], -R36[2][0])
+        solutions.append((_wrap_to_pi(q4_alt), _wrap_to_pi(-q5_mag), _wrap_to_pi(q6_alt)))
     else:
-        # Wrist singularity (q5 ≈ 0 or π): q4 and q6 are coupled
+        # Wrist singularity (q5 ≈ 0 or π): q4 and q6 are coupled.
         q6 = 0.0
         q4 = math.atan2(R36[0][1], R36[0][0])
+        solutions.append((_wrap_to_pi(q4), _wrap_to_pi(q5_mag), _wrap_to_pi(q6)))
 
-    return q4, q5, q6
+    # Deduplicate numerically-equivalent branches.
+    unique = []
+    for cand in solutions:
+        if not any(all(abs(a - b) < 1e-6 for a, b in zip(cand, seen)) for seen in unique):
+            unique.append(cand)
+    return unique
 
 
 # ---------------------------------------------------------------------------
@@ -229,23 +253,45 @@ def solve_ik(x, y, z, rx_deg, ry_deg, rz_deg):
     if abs(pw_y) > 10.0:
         raise IKError(f"Y = {pw_y:.1f} mm (must be ~0, J1 fixed)")
 
-    # Step 3: Try both elbow configurations, pick the one with lowest FK error
+    # Step 3: Try both elbow configurations and both wrist branches.
+    # Prefer an in-range solution when multiple FK-equivalent branches exist.
     best_angles = None
     best_err = float('inf')
+    best_violation = float('inf')
     last_exc = None
 
     for elbow_up in [True, False]:
         try:
             q2, q3 = _solve_position_ik(pw_x, pw_y, pw_z, elbow_up=elbow_up)
-            q4, q5, q6 = _solve_orientation_ik(q1, q2, q3, R_d)
+            for q4, q5, q6 in _solve_orientation_ik(q1, q2, q3, R_d):
+                # FK verification: check if the solution actually reaches the target
+                fx, fy, fz = _fk_position(q1, q2, q3, q4, q5, q6)
+                err = math.sqrt((x - fx)**2 + (y - fy)**2 + (z - fz)**2)
 
-            # FK verification: check if the solution actually reaches the target
-            fx, fy, fz = _fk_position(q1, q2, q3, q4, q5, q6)
-            err = math.sqrt((x - fx)**2 + (y - fy)**2 + (z - fz)**2)
+                angles_deg = [
+                    math.degrees(_wrap_to_pi(a)) for a in [q1, q2, q3, q4, q5, q6]
+                ]
 
-            if err < best_err:
-                best_err = err
-                best_angles = [q1, q2, q3, q4, q5, q6]
+                violation = 0.0
+                for i in range(6):
+                    jcfg = config.JOINTS[i] if i < len(config.JOINTS) else {}
+                    if not jcfg.get("enabled", 0):
+                        continue
+                    try:
+                        lo, hi = get_logical_limits(i)
+                        a = angles_deg[i]
+                        if a < lo:
+                            violation += lo - a
+                        elif a > hi:
+                            violation += a - hi
+                    except Exception:
+                        pass
+
+                if (violation < best_violation - 1e-9 or
+                        (abs(violation - best_violation) <= 1e-9 and err < best_err)):
+                    best_violation = violation
+                    best_err = err
+                    best_angles = [q1, q2, q3, q4, q5, q6]
         except IKError as e:
             last_exc = e
 
@@ -258,7 +304,7 @@ def solve_ik(x, y, z, rx_deg, ry_deg, rz_deg):
             f"FK position error: {best_err:.1f} mm"
         )
 
-    angles_deg = [math.degrees(a) for a in best_angles]
+    angles_deg = [math.degrees(_wrap_to_pi(a)) for a in best_angles]
 
     # Step 4: Joint limit check (enabled joints only)
     violations = []

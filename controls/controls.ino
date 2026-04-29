@@ -169,9 +169,9 @@ void readEncoders() {
       continue;
     }
     
-    // Skip joints with no stepper wired (placeholder pin 0) —
+    // Skip joints with no stepper wired (UNUSED_PIN placeholder) —
     // these have no encoder connected, so I2C would hang.
-    if (i < NUM_STEPPERS && STEP_PINS[i] == 0) {
+    if (i < NUM_STEPPERS && STEP_PINS[i] == UNUSED_PIN) {
       continue;  // leave encoderAngles[i] at its previous value
     }
     
@@ -326,7 +326,7 @@ void sendPidDebug() {
 // EN_ACTIVE_LEVEL = LOW means LOW = enabled, HIGH = disabled.
 void updateStepperEnPins() {
   for (int j = 0; j < NUM_STEPPERS; j++) {
-    if (STEP_PINS[j] == 0) continue;  // skip un-wired joints
+    if (STEP_PINS[j] == UNUSED_PIN) continue;  // skip un-wired joints
     if (currentMode == MODE_MOVE && jointEnabled[j]) {
       digitalWrite(EN_PINS[j], EN_ACTIVE_LEVEL);       // LOW = motor powered
     } else {
@@ -644,8 +644,8 @@ void setup() {
 
   // Initialize stepper pins (STEP, DIR, EN) for each joint
   for (int j = 0; j < NUM_STEPPERS; j++) {
-    // Skip un-wired joints (pin == 0 is placeholder)
-    if (STEP_PINS[j] == 0) continue;
+    // Skip un-wired joints (UNUSED_PIN placeholder)
+    if (STEP_PINS[j] == UNUSED_PIN) continue;
 
     pinMode(STEP_PINS[j], OUTPUT);
     digitalWriteFast(STEP_PINS[j], LOW);

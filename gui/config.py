@@ -35,22 +35,22 @@ NUM_JOINTS = 6
 #   raw = (logical - ref_offset) / direction + ref_raw
 #
 JOINTS = [
-    {"label": "Joint 1", "enabled": 0,        # No encoder — disabled (not part of RRR)
-     "ref_raw": 0.0, "ref_offset": 0.0, "direction": 1,
-     "min_raw": 0.0, "max_raw": 90.0},
+    {"label": "Joint 1", "enabled": 1,        # Encoder on TCA9548A ch 2 (SD2/SC2); STEP/DIR/EN = pins 0/1/2
+     "ref_raw": 200.0, "ref_offset": 0.0, "direction": -1,
+     "min_raw": 225.0, "max_raw": 120.0},
     {"label": "Joint 2 shoulder", "enabled": 1,  # AS5600 wired — RRR joint 1
-     "ref_raw": 301.9, "ref_offset": 0.0, "direction": -1,
-     "min_raw": 326.2, "max_raw": 280.5},
+     "ref_raw": 252.9, "ref_offset": 0.0, "direction": -1,
+     "min_raw": 220.5, "max_raw": 288.5},
     {"label": "Joint 3", "enabled": 1,            # AS5600 wired — RRR joint 2
-     "ref_raw": 203.4, "ref_offset": 0.0, "direction": -1,
+     "ref_raw": 201.4, "ref_offset": 0.0, "direction": -1,
      "min_raw": 229.3, "max_raw": 114.0},
     {"label": "Joint 4", "enabled": 1,            # AS5600 wired — wrist pitch
      "ref_raw": 103.0, "ref_offset": 0.0, "direction": -1,
-     "min_raw": 50.0, "max_raw": 150.0},
+     "min_raw": 192.0, "max_raw": 9.3},
     {"label": "Joint 5", "enabled": 1,            # AS5600 wired — RRR joint 3
      "ref_raw": 83.8, "ref_offset": 0.0, "direction": -1,
-     "min_raw": 169.2, "max_raw": 357.5},
-    {"label": "Joint 6", "enabled": 0,        # No encoder — disabled (not part of RRR)
+     "min_raw": 160.2, "max_raw": 365.5},
+    {"label": "Joint 6", "enabled": 1,        # No encoder — disabled (not part of RRR)
      "ref_raw": 120.0, "ref_offset": 120.0, "direction": 1,
      "min_raw": 60.0, "max_raw": 180.0},
 ]
